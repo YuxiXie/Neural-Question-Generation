@@ -45,7 +45,7 @@ Experiments contain the following techniques:
 
 ### Prepare the dataset and code
 
-Make an experiment home folder for NQG data - ```squad```:
+Make an experiment home folder for NQG data - ***squad***:
 ```bash
 mkdir -p $NQG_HOME/data
 cd $NQG_HOME/data
