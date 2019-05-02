@@ -1,6 +1,6 @@
-## NQG MODEL
+# NQG MODEL
 
-#### codes organize
+## codes organize
 
 ```
 seq2seq_pt
@@ -33,7 +33,7 @@ seq2seq_pt
 └── run_squad_qg.sh
 ```
 
-#### Run.py
+## Run.py
 
 1. parse the command options with funtions in `xargs.py`
 
@@ -97,7 +97,7 @@ seq2seq_pt
 
     * train by the `trainModel()` method of trainer
 
-#### Train.py
+## Train.py
 
 1. start from `trainModel()`
 
@@ -129,7 +129,7 @@ seq2seq_pt
 
             * `saveModel()`
 
-#### Eval.py
+## Eval.py
 
 1. build for dev data and different kinds of metric
 
@@ -145,7 +145,7 @@ seq2seq_pt
 
     * save the result (predicted sentences with copy marks)
 
-#### Models.py
+## Models.py
 
 **Encoder**
 
