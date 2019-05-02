@@ -147,7 +147,7 @@ seq2seq_pt
 
 #### Models.py
 
-*Encoder*
+**Encoder**
 
 * 3 x Embedding
 
@@ -157,7 +157,7 @@ seq2seq_pt
 
    * default : GRU + bi + 512 hidden + 0.5 dropout
 
-*Decoder*
+**Decoder**
 
 * rnn : StackedGRU
 
@@ -193,7 +193,7 @@ c_outputs = torch.stack(c_outputs)
 copyGateOutputs = torch.stack(copyGateOutputs)
 ```
 
-*StackedGRU*
+**StackedGRU**
 
 * dropout
 
@@ -217,7 +217,7 @@ copyGateOutputs = torch.stack(copyGateOutputs)
  return self.tanh(self.initer(last_enc_h))
  ```
 
-*NMTModel*
+**NMTModel**
 
 * encoder
 
