@@ -201,7 +201,7 @@ copyGateOutputs = torch.stack(copyGateOutputs)
 
 * make it convenient when number of layers > 1
 
-*DecInit*
+**DecInit**
 
 * Linear layer
 
