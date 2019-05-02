@@ -147,93 +147,93 @@ seq2seq_pt
 
 #### Models.py
 
-1. Encoder
+*Encoder*
 
-    * 3 x Embedding
+* 3 x Embedding
 
-        - word + bio + features
+   * word + bio + features
 
-    * rnn
+* rnn
 
-        - default : GRU + bi + 512 hidden + 0.5 dropout
+   * default : GRU + bi + 512 hidden + 0.5 dropout
 
-2. Decoder
+*Decoder*
 
-    * rnn : StackedGRU
+* rnn : StackedGRU
 
-    * attention (default)
+* attention (default)
 
-    * copy mechanism (default)
+* copy mechanism (default)
 
-    ```python
-    self.copySwitch = nn.Linear(opt.enc_rnn_size + opt.dec_rnn_size, 1)
+```python
+self.copySwitch = nn.Linear(opt.enc_rnn_size + opt.dec_rnn_size, 1)
 
-    copyProb = self.copySwitch(torch.cat((output, cur_context), dim=1))
-    copyProb = F.sigmoid(copyProb)
-    ```
+copyProb = self.copySwitch(torch.cat((output, cur_context), dim=1))
+copyProb = F.sigmoid(copyProb)
+```
 
-    * maxout
+* maxout
 
-    ```python
-    self.maxout = s2s.modules.MaxOut(opt.maxout_pool_size)
-    self.maxout_pool_size = opt.maxout_pool_size
+```python
+self.maxout = s2s.modules.MaxOut(opt.maxout_pool_size)
+self.maxout_pool_size = opt.maxout_pool_size
 
-    output = self.dropout(maxout)
-    ```
+output = self.dropout(maxout)
+```
 
-    * three kinds of output ( generate, copy, prob )
+* three kinds of output ( generate, copy, prob )
 
-    ```python
-    g_outputs += [output]
-    c_outputs += [attn]
-    copyGateOutputs += [copyProb]
+```python
+g_outputs += [output]
+c_outputs += [attn]
+copyGateOutputs += [copyProb]
 
-    g_outputs = torch.stack(g_outputs)
-    c_outputs = torch.stack(c_outputs)
-    copyGateOutputs = torch.stack(copyGateOutputs)
-    ```
+g_outputs = torch.stack(g_outputs)
+c_outputs = torch.stack(c_outputs)
+copyGateOutputs = torch.stack(copyGateOutputs)
+```
 
-3. StackedGRU
+*StackedGRU*
 
-    * dropout
+* dropout
 
-    * layer number: 1 (default)
+* layer number: 1 (default)
 
-    * make it convenient when number of layers > 1
+* make it convenient when number of layers > 1
 
-4. DecInit
+*DecInit*
 
-    * Linear layer
+* Linear layer
 
-    ```python
-    self.initer = nn.Linear(self.enc_rnn_size // self.num_directions, self.dec_rnn_size)
-    ```
+```python
+ self.initer = nn.Linear(self.enc_rnn_size // self.num_directions, self.dec_rnn_size)
+ ```
 
-    * tanh
+ * tanh
 
-    ```python
-    self.tanh = nn.Tanh()
+ ```python
+ self.tanh = nn.Tanh()
 
-    return self.tanh(self.initer(last_enc_h))
-    ```
+ return self.tanh(self.initer(last_enc_h))
+ ```
 
-5. NMTModel
+*NMTModel*
 
-    * encoder
+* encoder
 
-    ```python
-    enc_hidden, context = self.encoder(src, bio, feats)
-    ```
+```python
+enc_hidden, context = self.encoder(src, bio, feats)
+```
 
-    * decoder_init
+* decoder_init
 
-    ```python
-    enc_hidden = self.decIniter(enc_hidden[1]).unsqueeze(0)
-    ```
+```python
+enc_hidden = self.decIniter(enc_hidden[1]).unsqueeze(0)
+```
 
-    * decoder
+* decoder
 
-    ```python
-    g_out, c_out, c_gate_out, dec_hidden, _attn, _attention_vector
-            = self.decoder(tgt, enc_hidden, context, src_pad_mask, init_att)
-    ```
+```python
+g_out, c_out, c_gate_out, dec_hidden, _attn, _attention_vector
+      = self.decoder(tgt, enc_hidden, context, src_pad_mask, init_att)
+```
