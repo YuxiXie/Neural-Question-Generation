@@ -36,7 +36,7 @@ def add_data_options(parser):
     # Test options
     parser.add_argument('-dev_input_src',
                         help='Path to the dev input file.')
-    parser.add_argument('-dev_bio')
+    parser.add_argument('-dev_bio', default='')
     parser.add_argument('-dev_feats', default=[], nargs='+', type=str)
     parser.add_argument('-dev_ref',
                         help='Path to the dev reference file.')
@@ -80,6 +80,10 @@ def add_model_options(parser):
                         help=""""Define how to encode answer""")
     parser.add_argument('-feature', action='store_true', default=False,
                         help="""Encode features""")
+    parser.add_argument('-bert', action='store_true', default=False,
+                        help='Use BERT embedding model (fine tune)')
+    parser.add_argument('-paragraph', action='store_true', default=False,
+                        help='paragraph encoding - use self-attention-gate')
 
 
 def add_train_options(parser):
