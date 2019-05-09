@@ -8,7 +8,7 @@ except ImportError:
     pass
 
 lower = True
-seq_length = 100
+seq_length = 512
 report_every = 100000
 shuffle = 1
 
