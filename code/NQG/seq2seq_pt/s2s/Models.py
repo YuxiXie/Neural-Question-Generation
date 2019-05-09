@@ -6,6 +6,8 @@ import s2s.modules
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 
+from pytorch_pretrained_bert import BertModel
+
 try:
     import ipdb
 except ImportError:
@@ -19,21 +21,33 @@ class Encoder(nn.Module):
         assert opt.enc_rnn_size % self.num_directions == 0
         self.hidden_size = opt.enc_rnn_size // self.num_directions
         input_size = opt.word_vec_size
+        if opt.bert:
+            input_size = 768
 
         super(Encoder, self).__init__()
-        self.word_lut = nn.Embedding(dicts.size(),
-                                     opt.word_vec_size,
-                                     padding_idx=s2s.Constants.PAD)
+        self.bert = opt.bert
+        if opt.bert:
+            self.word_lut = BertModel.from_pretrained('bert-base-uncased')
+        else:
+            self.word_lut = nn.Embedding(dicts.size(),
+                                         opt.word_vec_size,
+                                         padding_idx=s2s.Constants.PAD)
         self.answer = opt.answer
         if self.answer == 'embedding':
             self.bio_lut = nn.Embedding(8, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
         self.feature = opt.feature
         if self.feature:
-            self.feat_lut = nn.Embedding(64, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
+            self.feat_lut = nn.Embedding(58, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
         if self.answer == 'embedding':
             input_size += 16
         if self.feature:
             input_size += 16 * 3
+
+        self.paragraph = opt.paragraph
+        if self.paragraph:
+            self.linear_trans = nn.Linear(opt.enc_rnn_size, opt.enc_rnn_size)
+            self.update_layer = nn.Linear(2 * opt.enc_rnn_size, opt.enc_rnn_size, bias=False)
+            self.gate = nn.Linear(2 * opt.enc_rnn_size, opt.enc_rnn_size, bias=False)
 
         self.rnn = nn.GRU(input_size, self.hidden_size,
                           num_layers=opt.layers,
@@ -45,12 +59,35 @@ class Encoder(nn.Module):
             pretrained = torch.load(opt.pre_word_vecs_enc)
             self.word_lut.weight.data.copy_(pretrained)
 
+    def gated_self_attn(self, queries, memories, mask):
+        # [b, l, h] * [b, h, l] = [b, l, l]
+        energies = torch.matmul(queries, memories.transpose(1, 2))
+        energies = energies.masked_fill(mask.unsqueeze(1), value=-1e12)
+
+        scores = F.softmax(energies, dim=2)
+        context = torch.matmul(scores, queries)
+        # [b, l, h*2]
+        inputs = torch.cat([queries, context], dim=2)
+
+        # [b, l, h*2] ——> [b, l, h]
+        f_t = torch.tanh(self.update_layer(inputs))
+        # [b, l, h*2] ——> [b, l, h] ——> [b, 1] ?
+        g_t = torch.sigmoid(self.gate(inputs))
+
+
+        updated_output = g_t * f_t + (1 - g_t) * queries
+
+        return updated_output
+
     def forward(self, input, bio, feats, hidden=None):
         """
         input: (wrap(srcBatch), wrap(srcBioBatch), lengths)
         """
         lengths = input[-1].data.view(-1).tolist()  # lengths data is wrapped inside a Variable
-        wordEmb = self.word_lut(input[0])
+        if self.bert:
+            wordEmb, _ = self.word_lut(input_ids=input[0], output_encoded_layers=False)
+        else:
+            wordEmb = self.word_lut(input[0])
         if self.answer == 'embedding':
             bioEmb = self.bio_lut(bio[0])
             if self.feature:
@@ -61,15 +98,33 @@ class Encoder(nn.Module):
                 input_emb = torch.cat((wordEmb, bioEmb), dim=-1)
         else:
             if self.feature:
+                ff = feats[0]
                 featsEmb = [self.feat_lut(feat) for feat in feats[0]]
                 featsEmb = torch.cat(featsEmb, dim=-1)
-                input_emb = torch.cat((wordEmb, featsEmb), dim=-1)
+                try:
+                    input_emb = torch.cat((wordEmb, featsEmb), dim=-1)
+                except:
+                    for f in ff:
+                        print(f.size())
             else:
                 input_emb = wordEmb
         emb = pack(input_emb, lengths)
         outputs, hidden_t = self.rnn(emb, hidden)
         if isinstance(input, tuple):
             outputs = unpack(outputs)[0]
+
+        # self attention for paragraph
+        if self.paragraph:
+            hid, ctxt = hidden_t
+
+            ipt = input[0].transpose(0, 1)
+            mask = (ipt == 0).byte()
+
+            tp_outputs = outputs.transpose(0, 1)
+            memories = self.linear_trans(tp_outputs)
+            tp_outputs = self.gated_self_attn(tp_outputs, memories, mask)
+            outputs = tp_outputs.transpose(0, 1)
+
         return hidden_t, outputs
 
 
@@ -105,13 +160,19 @@ class Decoder(nn.Module):
         self.layers = opt.layers
         self.input_feed = opt.input_feed
         input_size = opt.word_vec_size
+        if opt.bert:
+            input_size = 768
         if self.input_feed:
             input_size += opt.enc_rnn_size
 
         super(Decoder, self).__init__()
-        self.word_lut = nn.Embedding(dicts.size(),
-                                     opt.word_vec_size,
-                                     padding_idx=s2s.Constants.PAD)
+        self.bert = opt.bert
+        if opt.bert:
+            self.word_lut = BertModel.from_pretrained('bert-base-uncased')
+        else:
+            self.word_lut = nn.Embedding(dicts.size(),
+                                         opt.word_vec_size,
+                                         padding_idx=s2s.Constants.PAD)
         self.rnn = StackedGRU(opt.layers, input_size, opt.dec_rnn_size, opt.dropout)
         self.attn = s2s.modules.ConcatAttention(opt.enc_rnn_size, opt.dec_rnn_size, opt.att_vec_size)
         self.dropout = nn.Dropout(opt.dropout)
@@ -131,7 +192,10 @@ class Decoder(nn.Module):
             self.word_lut.weight.data.copy_(pretrained)
 
     def forward(self, input, hidden, context, src_pad_mask, init_att):
-        emb = self.word_lut(input)
+        if self.bert:
+            emb, _ = self.word_lut(input_ids=input, output_encoded_layers=False)
+        else:
+            emb = self.word_lut(input)
 
         g_outputs = []
         c_outputs = []
