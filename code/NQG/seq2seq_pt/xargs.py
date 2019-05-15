@@ -30,6 +30,9 @@ def add_data_options(parser):
     parser.add_argument('-feat_vocab', default='')
     parser.add_argument('-train_tgt')
     parser.add_argument('-tgt_vocab')
+    parser.add_argument('-train_ans', default='')
+    parser.add_argument('-ans_vocab', default='')
+    parser.add_argument('-train_ans_feats', default=[], nargs='+', type=str)
     parser.add_argument('-lower_input', action="store_true",
                         help="Lower case all the input. Default is False")
 
@@ -37,7 +40,9 @@ def add_data_options(parser):
     parser.add_argument('-dev_input_src',
                         help='Path to the dev input file.')
     parser.add_argument('-dev_bio', default='')
+    parser.add_argument('-dev_ans', default='')
     parser.add_argument('-dev_feats', default=[], nargs='+', type=str)
+    parser.add_argument('-dev_ans_feats', default=[], nargs='+', type=str)
     parser.add_argument('-dev_ref',
                         help='Path to the dev reference file.')
     parser.add_argument('-beam_size', type=int, default=12,
@@ -55,6 +60,8 @@ def add_model_options(parser):
                         help='Number of layers in the LSTM encoder/decoder')
     parser.add_argument('-enc_rnn_size', type=int, default=512,
                         help='Size of LSTM hidden states')
+    parser.add_argument('-answer_enc_rnn_size', type=int, default=512,
+                        help='Size of LSTM hidden states')
     parser.add_argument('-dec_rnn_size', type=int, default=512,
                         help='Size of LSTM hidden states')
     parser.add_argument('-word_vec_size', type=int, default=300,
@@ -70,7 +77,7 @@ def add_model_options(parser):
     # parser.add_argument('-residual',   action="store_true",
     #                     help="Add residual connections between RNN layers.")
     parser.add_argument('-brnn', action='store_true',
-                        help='Use a bidirectional encoder')
+                        help="""Use a bidirectional encoder""")
     parser.add_argument('-brnn_merge', default='concat',
                         help="""Merge action for the bidirectional hidden states:
                         [concat|sum]""")
@@ -78,6 +85,10 @@ def add_model_options(parser):
                         help="""Use a copy mechanism""")
     parser.add_argument('-answer', default='',
                         help=""""Define how to encode answer""")
+    parser.add_argument('-answer_brnn', action='store_true', default=False,
+                        help=""""Use a bidirectional answer encoder""")
+    parser.add_argument('-answer_feature', action='store_true', default=False,
+                        help="""Encode answer features""")
     parser.add_argument('-feature', action='store_true', default=False,
                         help="""Encode features""")
     parser.add_argument('-bert', action='store_true', default=False,
@@ -149,6 +160,10 @@ def add_train_options(parser):
     parser.add_argument('-pre_word_vecs_enc',
                         help="""If a valid path is specified, then this will load
                         pretrained word embeddings on the encoder side.
+                        See README for specific formatting instructions.""")
+    parser.add_argument('-pre_word_vecs_answer_enc',
+                        help="""If a valid path is specified, then this will load
+                        pretrained word embeddings on the answer encoder side.
                         See README for specific formatting instructions.""")
     parser.add_argument('-pre_word_vecs_dec',
                         help="""If a valid path is specified, then this will load
