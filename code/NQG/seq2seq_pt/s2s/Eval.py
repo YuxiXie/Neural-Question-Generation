@@ -15,15 +15,32 @@ class Evaluator(object):
         self.translator = translator
 
     def get_bleu(self, batch, raw):
-        if self.opt.feature:
-            src, bio, feats, tgt, indices = batch[0]
+        if self.opt.answer == 'encoder':
+            bio = None
+            if self.opt.answer_feature:
+                if self.opt.feature:
+                    src, ans, feats, tgt, ansfeats, indices = batch[0]
+                else:
+                    src, ans, tgt, ansfeats, indices = batch[0]
+                    feats = None
+            else:
+                ansfeats = None
+                if self.opt.feature:
+                    src, ans, feats, tgt, indices = batch[0]
+                else:
+                    src, ans, tgt, indices = batch[0]
+                    feats = None
         else:
-            src, bio, tgt, indices = batch[0]
-            feats = None
+            ans, ansfeats = None, None
+            if self.opt.feature:
+                src, bio, feats, tgt, indices = batch[0]
+            else:
+                src, bio, tgt, indices = batch[0]
+                feats = None
         src_batch, tgt_batch = raw
 
         #  translate
-        pred, predScore, predIsCopy, predCopyPosition, attn, _ = self.translator.translateBatch(src, bio, feats, tgt)
+        pred, predScore, predIsCopy, predCopyPosition, attn, _ = self.translator.translateBatch(src, bio, feats, tgt, ans, ansfeats)
         if self.opt.copy:
             pred, predScore, predIsCopy, predCopyPosition, attn = list(zip(
                 *sorted(zip(pred, predScore, predIsCopy, predCopyPosition, attn, indices),
@@ -73,15 +90,30 @@ class Evaluator(object):
                    (wrap(tgtBatch), wrap(copySwitchBatch), wrap(copyTgtBatch)), \
                    indices
             """
-            if self.opt.feature:
-                src, bio, feats, tgt, indices = batch[0]
+            bio, feats, ans, ansfeats = None, None, None, None
+            if self.opt.answer == 'encoder':
+                if self.opt.answer_feature:
+                    if self.opt.feature:
+                        src, ans, feats, tgt, ansfeats, indices = batch[0]
+                    else:
+                        src, ans, tgt, ansfeats, indices = batch[0]
+                        feats = None
+                else:
+                    if self.opt.feature:
+                        src, ans, feats, tgt, indices = batch[0]
+                    else:
+                        src, ans, tgt, indices = batch[0]
+                        feats = None
             else:
-                src, bio, tgt, indices = batch[0]
-                feats = None
+                if self.opt.feature:
+                    src, bio, feats, tgt, indices = batch[0]
+                else:
+                    src, bio, tgt, indices = batch[0]
+                    feats = None
             src_batch, tgt_batch = raw_batch
 
             #  (2) translate
-            pred, predScore, predIsCopy, predCopyPosition, attn, _ = self.translator.translateBatch(src, bio, feats, tgt)
+            pred, predScore, predIsCopy, predCopyPosition, attn, _ = self.translator.translateBatch(src, bio, feats, tgt, ans, ansfeats)
             pred, predScore, predIsCopy, predCopyPosition, attn = list(zip(
                 *sorted(zip(pred, predScore, predIsCopy, predCopyPosition, attn, indices),
                         key=lambda x: x[-1])))[:-1]
