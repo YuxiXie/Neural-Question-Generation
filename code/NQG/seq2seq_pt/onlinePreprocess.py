@@ -56,9 +56,10 @@ def saveVocabulary(name, vocab, file):
     vocab.writeFile(file)
 
 
-def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDicts, bioDicts, featDicts, tgtDicts):
-    src, tgt = [], []
+def makeData(copy, answer, feature, answer_feature, srcFile, bioFile, featFiles, tgtFile, srcDicts, bioDicts, featDicts, tgtDicts, ansFile=None, ansDicts=None, ansfeatFiles=None, ansfeatDicts=None):
+    src, tgt, ans = [], [], []
     bio = []
+    ansfeats = []
     feats = []
     switch, c_tgt = [], []
     sizes = []
@@ -67,7 +68,11 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
     logger.info('Processing %s & %s ...' % (srcFile, tgtFile))
     srcF = open(srcFile, encoding='utf-8')
     tgtF = open(tgtFile, encoding='utf-8')
-    if answer == 'embedding':
+    if answer == 'encoder':
+        ansF = open(ansFile, encoding='utf-8')
+        if answer_feature:
+            ansfeatFs = [open(x, encoding='utf-8') for x in ansfeatFiles]
+    elif answer == 'embedding':
         bioF = open(bioFile, encoding='utf-8')
     if feature:
         featFs = [open(x, encoding='utf-8') for x in featFiles]
@@ -75,7 +80,11 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
     while True:
         sline = srcF.readline()
         tline = tgtF.readline()
-        if answer == 'embedding':
+        if answer == 'encoder':
+            aline = ansF.readline()
+            if answer_feature:
+                aflines = [x.readline() for x in ansfeatFs]
+        elif answer == 'embedding':
             bioLine = bioF.readline()
         if feature:
             featLines = [x.readline() for x in featFs]
@@ -85,32 +94,44 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
             break
 
         # source or target does not have same number of lines
-        if sline == "" or tline == "":
+        if sline == "" or tline == "" or (answer == 'encoder' and aline == ""):
             logger.info('WARNING: source and target do not have the same number of sentences')
             break
 
         sline = sline.strip()
         tline = tline.strip()
-        if answer == 'embedding':
+        if answer == 'encoder':
+            aline = aline.strip()
+            if answer_feature:
+                aflines = [line.strip() for line in aflines]
+        elif answer == 'embedding':
             bioLine = bioLine.strip()
         if feature:
             featLines = [line.strip() for line in featLines]
 
         # source and/or target are empty
-        if sline == "" or tline == "":
+        if sline == "" or tline == "" or (answer == 'encoder' and aline == ""):
             logger.info('WARNING: ignoring an empty line (' + str(count + 1) + ')')
             continue
 
         srcWords = sline.split(' ')
         tgtWords = tline.split(' ')
-        if answer == 'embedding':
+        if answer == 'encoder':
+            ansWords = aline.split(' ')
+            if answer_feature:
+                afWords = [x.split(' ') for x in aflines]
+        elif answer == 'embedding':
             bioWords = bioLine.split(' ')
         if feature:
             featWords = [x.split(' ') for x in featLines]
 
         if len(srcWords) <= seq_length and len(tgtWords) <= seq_length:
             src += [srcDicts.convertToIdx(srcWords, s2s.Constants.UNK_WORD)]
-            if answer == 'embedding':
+            if answer == 'encoder':
+                ans += [ansDicts.convertToIdx(ansWords, s2s.Constants.UNK_WORD)]
+                if answer_feature:
+                    ansfeats += [[ansfeatDicts.convertToIdx(x, s2s.Constants.UNK_WORD) for x in afWords]]
+            elif answer == 'embedding':
                 bio += [bioDicts.convertToIdx(bioWords, s2s.Constants.UNK_WORD)]
             if feature:
                 feats += [[featDicts.convertToIdx(x, s2s.Constants.UNK_WORD) for x in featWords]]
@@ -142,7 +163,12 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
 
     srcF.close()
     tgtF.close()
-    if answer == 'embedding':
+    if answer == 'encoder':
+        ansF.close()
+        if answer_feature:
+            for x in ansfeatFs:
+                x.close()
+    elif answer == 'embedding':
         bioF.close()
     if feature:
         for x in featFs:
@@ -153,7 +179,11 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
         perm = torch.randperm(len(src))
         src = [src[idx] for idx in perm]
         tgt = [tgt[idx] for idx in perm]
-        if answer == 'embedding':
+        if answer == 'encoder':
+            ans = [ans[idx] for idx in perm]
+            if answer_feature:
+                ansfeats = [ansfeats[idx] for idx in perm]
+        elif answer == 'embedding':
             bio = [bio[idx] for idx in perm]
         if feature:
             feats = [feats[idx] for idx in perm]
@@ -166,10 +196,17 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
     _, perm = torch.sort(torch.Tensor(sizes))
     src = [src[idx] for idx in perm]
     tgt = [tgt[idx] for idx in perm]
-    if answer == 'embedding':
+    if answer == 'encoder':
+        ans = [ans[idx] for idx in perm]
+        if answer_feature:
+            ansfeats = [ansfeats[idx] for idx in perm]
+        else:
+            ansfeats = None
+    elif answer == 'embedding':
         bio = [bio[idx] for idx in perm]
     else:
         bio = None
+        ans, ansfeats = None, None
     if feature:
         feats = [feats[idx] for idx in perm]
     else:
@@ -182,26 +219,37 @@ def makeData(copy, answer, feature, srcFile, bioFile, featFiles, tgtFile, srcDic
 
     logger.info('Prepared %d sentences (%d ignored due to length == 0 or > %d)' %
                 (len(src), ignored, seq_length))
-    return src, bio, feats, tgt, switch, c_tgt
+    return src, bio, feats, tgt, switch, c_tgt, ans, ansfeats
 
 
-def prepare_data_online(copy, answer, feature, train_src, src_vocab, train_bio, bio_vocab, train_feats, feat_vocab, train_tgt, tgt_vocab):
+def prepare_data_online(copy, answer, feature, ans_feature, 
+                        train_src, src_vocab, train_bio, bio_vocab,
+                        train_feats, feat_vocab, train_tgt, tgt_vocab,
+                        train_ans=None, ans_vocab=None, train_ans_feats=None):
     dicts = {}
     dicts['src'] = initVocabulary('source', [train_src], src_vocab, 0)
     dicts['tgt'] = initVocabulary('target', [train_tgt], tgt_vocab, 0)
-    dicts['bio'], dicts['feat'] = None, None
+    dicts['bio'], dicts['feat'], dicts['ans'], dicts['ans-feat'] = None, None, None, None
     if answer == 'embedding':
         dicts['bio'] = initVocabulary('bio', [train_bio], bio_vocab, 0)
     if feature:
         dicts['feat'] = initVocabulary('feat', [train_feats], feat_vocab, 0)
 
+    if answer == 'encoder':
+        dicts['ans'] = initVocabulary('answer', [train_ans], ans_vocab, 0)
+        if ans_feature:
+            dicts['ans-feat'] = initVocabulary('ans-feat', [train_ans_feats], feat_vocab, 0)
+
     logger.info('Preparing training ...')
     train = {}
     train['src'], train['bio'], train['feats'], \
-    train['tgt'], train['switch'], train['c_tgt'] = makeData(copy, answer, feature, train_src,
-                                                             train_bio, train_feats, train_tgt,
-                                                             dicts['src'], dicts['bio'],
-                                                             dicts['feat'], dicts['tgt'])
+    train['tgt'], train['switch'], train['c_tgt'], \
+    train['ans'], train['ans-feats'] = makeData(copy, answer, feature, ans_feature, train_src,
+                                                train_bio, train_feats, train_tgt,
+                                                dicts['src'], dicts['bio'],
+                                                dicts['feat'], dicts['tgt'],
+                                                train_ans, dicts['ans'],
+                                                train_ans_feats, dicts['ans-feat'])
 
     dataset = {'dicts': dicts,
                'train': train,
