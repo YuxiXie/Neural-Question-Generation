@@ -5,6 +5,7 @@ from torch.nn import functional as F
 import s2s.modules
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
+import numpy as np
 
 from pytorch_pretrained_bert import BertModel
 
@@ -14,8 +15,80 @@ except ImportError:
     pass
 
 
+class AnswerEncoder(nn.Module):
+    def __init__(self, opt, vocab_size):
+        self.num_directions = 2 if opt.answer_brnn else 1
+        assert opt.answer_enc_rnn_size % self.num_directions == 0
+        self.hidden_size = opt.answer_enc_rnn_size // self.num_directions
+        input_size = opt.word_vec_size
+
+        super(AnswerEncoder, self).__init__()
+
+        self.word_lut = nn.Embedding(vocab_size,
+                                     opt.word_vec_size,
+                                     padding_idx=s2s.Constants.PAD)
+
+        self.feature = opt.answer_feature
+        if self.feature:
+            self.feat_lut = nn.Embedding(58, 16, padding_idx=s2s.Constants.PAD)
+
+        self.rnn = nn.GRU(input_size, self.hidden_size,
+                          num_layers=1,
+                          dropout=opt.dropout,
+                          bidirectional=opt.answer_brnn)
+
+    def load_pretrained_vectors(self, opt):
+        if opt.pre_word_vecs_answer_enc is not None:
+            pretrained = torch.load(opt.pre_word_vecs_answer_enc)
+            self.word_lut.weight.data.copy_(pretrained)
+
+    def forward(self, input, feats, hidden=None):
+        lengths = input[-1].data.view(-1).tolist()  # lengths data is wrapped inside a Variable
+        wordEmb = self.word_lut(input[0])
+        if self.feature:
+            ff = feats[0]
+            featsEmb = [self.feat_lut(feat) for feat in feats[0]]
+            featsEmb = torch.cat(featsEmb, dim=-1)
+            input_emb = torch.cat((wordEmb, featsEmb), dim=-1)
+        else:
+            input_emb = wordEmb
+
+
+        lens = lengths
+        input_emb = input_emb.transpose(0, 1)
+        indices = range(len(input_emb))
+
+        input_emb, lens, indices = zip(*sorted(zip(input_emb, lens, indices), key=lambda x: -x[1]))
+
+        input_emb = [x.unsqueeze(0) for x in list(input_emb)]
+        input_emb = torch.cat(input_emb, dim=0).transpose(0, 1)
+
+        emb = pack(input_emb, list(lens))
+
+        outputs, hidden_t = self.rnn(emb, hidden)
+
+        if isinstance(input, tuple):
+            outputs = unpack(outputs)[0]
+
+        outputs = outputs.transpose(0, 1)
+        outputs, indices, h1, h2 = zip(*sorted(zip(outputs, indices, hidden_t[0], hidden_t[1]), key=lambda x: x[1]))
+
+        outputs = [x.unsqueeze(0) for x in list(outputs)]
+        outputs = torch.cat(outputs, dim=0).transpose(0, 1)
+
+        h1 = [x.unsqueeze(0) for x in list(h1)]
+        h1 = torch.cat(h1, dim=0)
+
+        h2 = [x.unsqueeze(0) for x in list(h2)]
+        h2 = torch.cat(h2, dim=0)
+
+        hidden_t = (h1, h2)
+
+        return hidden_t, outputs
+
+
 class Encoder(nn.Module):
-    def __init__(self, opt, dicts):
+    def __init__(self, opt, dicts, answer_size=None):
         self.layers = opt.layers
         self.num_directions = 2 if opt.brnn else 1
         assert opt.enc_rnn_size % self.num_directions == 0
@@ -80,9 +153,6 @@ class Encoder(nn.Module):
         return updated_output
 
     def forward(self, input, bio, feats, hidden=None):
-        """
-        input: (wrap(srcBatch), wrap(srcBioBatch), lengths)
-        """
         lengths = input[-1].data.view(-1).tolist()  # lengths data is wrapped inside a Variable
         if self.bert:
             wordEmb, _ = self.word_lut(input_ids=input[0], output_encoded_layers=False)
@@ -240,7 +310,11 @@ class DecInit(nn.Module):
         assert opt.enc_rnn_size % self.num_directions == 0
         self.enc_rnn_size = opt.enc_rnn_size
         self.dec_rnn_size = opt.dec_rnn_size
-        self.initer = nn.Linear(self.enc_rnn_size // self.num_directions, self.dec_rnn_size)
+        if opt.answer == 'encoder':
+            self.answer_enc_rnn_size = opt.answer_enc_rnn_size
+            self.initer = nn.Linear(self.answer_enc_rnn_size, self.dec_rnn_size)
+        else:
+            self.initer = nn.Linear(self.enc_rnn_size // self.num_directions, self.dec_rnn_size)
         self.tanh = nn.Tanh()
 
     def forward(self, last_enc_h):
@@ -250,10 +324,11 @@ class DecInit(nn.Module):
 
 
 class NMTModel(nn.Module):
-    def __init__(self, encoder, decoder, decIniter):
+    def __init__(self, encoder, decoder, decIniter, answer_encoder=None):
         super(NMTModel, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.answer_encoder = answer_encoder
         self.decIniter = decIniter
 
     def make_init_att(self, context):
@@ -270,6 +345,10 @@ class NMTModel(nn.Module):
                (wrap(bioBatch), lengths), ((wrap(x) for x in featBatches), lengths), \
                (wrap(tgtBatch), wrap(copySwitchBatch), wrap(copyTgtBatch)), \
                indices
+        (wrap(srcBatch), lengths), \
+               (wrap(ansBatch), ans_lengths), ((wrap(x) for x in featBatches), lengths), \
+               (wrap(tgtBatch), wrap(copySwitchBatch), wrap(copyTgtBatch)), \
+               indices
         """
         # ipdb.set_trace()
         src = input[0]
@@ -282,14 +361,27 @@ class NMTModel(nn.Module):
         src_pad_mask = Variable(src[0].data.eq(s2s.Constants.PAD).transpose(0, 1).float(),
                                 requires_grad=False, volatile=False)
 
-        bio = None
-        if self.encoder.answer == 'embedding':
+        bio, ans, ans_feats = None, None, None
+        if self.encoder.answer == 'encoder':
+            ans = input[1]
+            if self.answer_encoder.feature:
+                if self.encoder.feature:
+                    ans_feats = input[4]
+                else:
+                    ans_feats = input[3]
+        elif self.encoder.answer == 'embedding':
             bio = input[1]
 
         enc_hidden, context = self.encoder(src, bio, feats)
 
         init_att = self.make_init_att(context)
-        enc_hidden = self.decIniter(enc_hidden[1]).unsqueeze(0)  # [1] is the last backward hidden
+        if self.encoder.answer == 'encoder':
+            ans_hidden, _ = self.answer_encoder(ans, ans_feats)
+            ans_hidden = torch.cat((ans_hidden[0], ans_hidden[1]), dim=-1)
+            ans_hidden = self.decIniter(ans_hidden).unsqueeze(0)
+            enc_hidden = ans_hidden
+        else:
+            enc_hidden = self.decIniter(enc_hidden[1]).unsqueeze(0)  # [1] is the last backward hidden
 
         if self.decoder.copy:
             g_out, c_out, c_gate_out, dec_hidden, _attn, _attention_vector \
