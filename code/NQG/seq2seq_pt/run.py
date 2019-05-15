@@ -20,24 +20,35 @@ def addPair(f1, f2):
         yield (x, y1)
     yield (None, None)
 
-def load_dev_data(translator, src_file, bio_file, feat_files, tgt_file):
+def load_dev_data(translator, src_file, bio_file, feat_files, tgt_file, ans_file, ansfeat_files):
     dataset, raw = [], []
     srcF = open(src_file, encoding='utf-8')
     tgtF = open(tgt_file, encoding='utf-8')
-    if opt.answer == 'embedding':
+    if opt.answer == 'encoder':
+        ansF = open(ans_file, encoding='utf-8')
+        if opt.answer_feature:
+            ansfeatFs = [open(x, encoding='utf-8') for x in ansfeat_files]
+    elif opt.answer == 'embedding':
         bioF = open(bio_file, encoding='utf-8')
     if opt.feature:
         featFs = [open(x, encoding='utf-8') for x in feat_files]
 
     src_batch, tgt_batch = [], []
     bio_batch, feats_batch = [], []
+    ans_batch, ansfeats_batch = [], []
     for line, tgt in addPair(srcF, tgtF):
         if (line is not None) and (tgt is not None):
             src_tokens = line.strip().split(' ')
             src_batch += [src_tokens]
             tgt_tokens = tgt.strip().split(' ')
             tgt_batch += [tgt_tokens]
-            if opt.answer == 'embedding':
+            if opt.answer == 'encoder':
+                ans_tokens = ansF.readline().strip().split(' ')
+                ans_batch += [ans_tokens]
+                if opt.answer_feature:
+                    ansfeats_tokens = [reader.readline().strip().split((' ')) for reader in ansfeatFs]
+                    ansfeats_batch += [ansfeats_tokens]
+            elif opt.answer == 'embedding':
                 bio_tokens = bioF.readline().strip().split(' ')
                 bio_batch += [bio_tokens]
             if opt.feature:
@@ -50,13 +61,19 @@ def load_dev_data(translator, src_file, bio_file, feat_files, tgt_file):
             # at the end of file, check last batch
             if len(src_batch) == 0:
                 break
-        data = translator.buildData(src_batch, bio_batch, feats_batch, tgt_batch)
+        data = translator.buildData(src_batch, bio_batch, feats_batch, tgt_batch, ans_batch, ansfeats_batch)
         dataset.append(data)
         raw.append((src_batch, tgt_batch))
         src_batch, tgt_batch = [], []
         bio_batch, feats_batch = [], []
+        ans_batch, ansfeats_batch = [], []
     srcF.close()
-    if opt.answer == 'embedding':
+    if opt.answer == 'encoder':
+        ansF.close()
+        if opt.answer_feature:
+            for f in ansfeatFs:
+                f.close()
+    elif opt.answer == 'embedding':
         bioF.close()
     if opt.feature:
         for f in featFs:
@@ -113,11 +130,14 @@ onlinePreprocess.seq_length = opt.max_sent_length
 onlinePreprocess.shuffle = 1 if opt.process_shuffle else 0
 
 from onlinePreprocess import prepare_data_online
-dataset = prepare_data_online(opt.copy, opt.answer, opt.feature, opt.train_src, opt.src_vocab, opt.train_bio, opt.bio_vocab, opt.train_feats,
-                              opt.feat_vocab, opt.train_tgt, opt.tgt_vocab)
+dataset = prepare_data_online(opt.copy, opt.answer, opt.feature, opt.answer_feature,
+                              opt.train_src, opt.src_vocab, opt.train_bio, opt.bio_vocab,
+                              opt.train_feats, opt.feat_vocab, opt.train_tgt, opt.tgt_vocab,
+                              opt.train_ans, opt.ans_vocab, opt.train_ans_feats)
 trainData = s2s.Dataset(dataset['train']['src'], dataset['train']['bio'], dataset['train']['feats'],
                         dataset['train']['tgt'], dataset['train']['switch'], dataset['train']['c_tgt'],
-                        opt.batch_size, opt.gpus, opt.copy, opt.answer, opt.feature)
+                        dataset['train']['ans'], dataset['train']['ans-feats'],
+                        opt.batch_size, opt.gpus, opt.copy, opt.answer, opt.feature, opt.answer_feature)
 dicts = dataset['dicts']
 logger.info(' * vocabulary size. source = %d; target = %d' %
             (dicts['src'].size(), dicts['tgt'].size()))
@@ -131,6 +151,8 @@ logger.info('Building model...')
 ############################## define and prepare model ##############################
 encoder = s2s.Models.Encoder(opt, dicts['src'])
 decoder = s2s.Models.Decoder(opt, dicts['tgt'])
+if opt.answer == 'encoder':
+    answer_encoder = s2s.Models.AnswerEncoder(opt, dicts['ans'].size())
 decIniter = s2s.Models.DecInit(opt)
 generator = nn.Sequential(
     nn.Linear(opt.dec_rnn_size // opt.maxout_pool_size, dicts['tgt'].size()),  # TODO: fix here
@@ -153,7 +175,10 @@ if opt.resume:
 
     generator.load_state_dict(checkpoint['generator'])
 
-model = s2s.Models.NMTModel(encoder, decoder, decIniter)
+if opt.answer == 'encoder':
+    model = s2s.Models.NMTModel(encoder, decoder, decIniter, answer_encoder)
+else:
+    model = s2s.Models.NMTModel(encoder, decoder, decIniter)
 model.generator = generator
 
 translator = s2s.Translator(opt, model, dataset)
@@ -180,6 +205,8 @@ if not opt.resume:
 
     encoder.load_pretrained_vectors(opt)
     decoder.load_pretrained_vectors(opt)
+    if opt.answer == 'encoder':
+        answer_encoder.load_pretrained_vectors(opt)
 else:
     model.flatten_parameters() # make RNN parameters contiguous
 
@@ -189,16 +216,16 @@ validData = None
 devData, train_dataset = None, None
 
 if opt.dev_input_src and opt.dev_ref:
-    validData = load_dev_data(translator, opt.dev_input_src, opt.dev_bio, opt.dev_feats, opt.dev_ref)
+    validData = load_dev_data(translator, opt.dev_input_src, opt.dev_bio, opt.dev_feats, opt.dev_ref, opt.dev_ans, opt.dev_ans_feats)
 
     if opt.result_path:
-        dev_dataset = prepare_data_online(opt.copy, opt.answer, opt.feature, opt.dev_input_src, opt.src_vocab, opt.dev_bio, opt.bio_vocab, opt.dev_feats,
-                                      opt.feat_vocab, opt.dev_ref, opt.tgt_vocab)
+        dev_dataset = prepare_data_online(opt.copy, opt.answer, opt.feature, opt.answer_feature, opt.dev_input_src, opt.src_vocab, opt.dev_bio, opt.bio_vocab, opt.dev_feats,
+                                      opt.feat_vocab, opt.dev_ref, opt.tgt_vocab, opt.dev_ans, opt.ans_vocab, opt.dev_ans_feats)
         devData = s2s.Dataset(dev_dataset['train']['src'], dev_dataset['train']['bio'], dev_dataset['train']['feats'],
-                                dev_dataset['train']['tgt'], dev_dataset['train']['switch'], dev_dataset['train']['c_tgt'],
-                                opt.batch_size, opt.gpus, opt.copy, opt.answer, opt.feature)
+                              dev_dataset['train']['tgt'], dev_dataset['train']['switch'], dev_dataset['train']['c_tgt'],
+                              dev_dataset['train']['ans'], dev_dataset['train']['ans-feats'], opt.batch_size, opt.gpus, opt.copy, opt.answer, opt.feature, opt.answer_feature)
 
-        train_dataset = load_dev_data(translator, opt.train_src, opt.train_bio, opt.train_feats, opt.train_tgt)
+        train_dataset = load_dev_data(translator, opt.train_src, opt.train_bio, opt.train_feats, opt.train_tgt, opt.train_ans, opt.train_ans_feats)
 
 
 ############################## define and prepare loss ##############################
