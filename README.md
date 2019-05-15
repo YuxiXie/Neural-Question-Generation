@@ -2,7 +2,7 @@
 
 * This repository builds a seq2seq-based model which can test different techniques of the state-of-arts in the field of neural question generation.
 
-* The raw code comes from the implementation code for the paper "[Neural Question Generation from Text: A Preliminary Study](https://arxiv.org/abs/1704.01792)"
+* The based code comes from the implementation code for the paper "[Neural Question Generation from Text: A Preliminary Study](https://arxiv.org/abs/1704.01792)"
 
 ```
 @article{zhou2017neural,
@@ -21,7 +21,7 @@ Experiments contain the following techniques:
 
     - bio embedding in source
 
-    - separate answer encoding
+    - separate answer encoder
    
 * feature encoding
 
@@ -97,9 +97,9 @@ nltk scipy numpy pytorch
 
 #### Without Docker
 ```bash
-bash $NQG_HOME/code/NQG/seq2seq_pt/run_squad_qg.sh $NQG_HOME/data/redistribute/QG $NQG_HOME/code/NQG/seq2seq_pt
+bash $NQG_HOME/code/NQG/seq2seq_pt/run_qg.sh $NQG_HOME/data/redistribute/QG $NQG_HOME/code/NQG/seq2seq_pt
 ```
 #### Inside the docker:
 ```bash
-bash code/NQG/seq2seq_pt/run_squad_qg.sh /workspace/data/redistribute/QG /workspace/code/NQG/seq2seq_pt
+bash code/NQG/seq2seq_pt/run_qg.sh /workspace/data/redistribute/QG /workspace/code/NQG/seq2seq_pt
 ```
