@@ -50,9 +50,12 @@ class Translator(object):
             self.tgt_dict = dataset['dicts']['tgt']
             self.bio_dict = dataset['dicts']['bio']
             self.feats_dict = dataset['dicts']['feat']
+            self.ans_dict = dataset['dicts']['ans']
 
             self.enc_rnn_size = opt.enc_rnn_size
             self.dec_rnn_size = opt.dec_rnn_size
+            if opt.answer == 'encoder':
+                self.answer_enc_rnn_size = opt.answer_enc_rnn_size
             self.opt.cuda = True if len(opt.gpus) >= 1 else False
             self.opt.n_best = 1
             self.opt.replace_unk = False
@@ -63,11 +66,14 @@ class Translator(object):
 
         self.copyCount = 0
 
-    def buildData(self, srcBatch, bioBatch, featsBatch, goldBatch):
-        srcData = [self.src_dict.convertToIdx(b,
-                                              s2s.Constants.UNK_WORD) for b in srcBatch]
-        bioData, featsData = None, None
-        if self.opt.answer == 'embedding':
+    def buildData(self, srcBatch, bioBatch, featsBatch, goldBatch, ansBatch, ansfeatsBatch):
+        srcData = [self.src_dict.convertToIdx(b, s2s.Constants.UNK_WORD) for b in srcBatch]
+        bioData, featsData, ansData, ansfeatsData = None, None, None, None
+        if self.opt.answer == 'encoder':
+            ansData = [self.ans_dict.convertToIdx(b, s2s.Constants.UNK_WORD) for b in ansBatch]
+            if self.opt.answer_feature:
+                ansfeatsData = [[self.feats_dict.convertToIdx(x, s2s.Constants.UNK_WORD) for x in b] for b in ansfeatsBatch]
+        elif self.opt.answer == 'embedding':
             bioData = [self.bio_dict.convertToIdx(b, s2s.Constants.UNK_WORD) for b in bioBatch]
         if self.opt.feature:
             featsData = [[self.feats_dict.convertToIdx(x, s2s.Constants.UNK_WORD) for x in b] for b in featsBatch]
@@ -78,7 +84,7 @@ class Translator(object):
                                                   s2s.Constants.BOS_WORD,
                                                   s2s.Constants.EOS_WORD) for b in goldBatch]
 
-        return s2s.Dataset(srcData, bioData, featsData, tgtData, None, None, self.opt.batch_size, self.opt.cuda, self.opt.copy, self.opt.answer, self.opt.feature)
+        return s2s.Dataset(srcData, bioData, featsData, tgtData, None, None, ansData, ansfeatsData, self.opt.batch_size, self.opt.cuda, self.opt.copy, self.opt.answer, self.opt.feature, self.opt.answer_feature)
 
     def buildTargetTokens(self, pred, src, isCopy, copyPosition, attn):
         pred_word_ids = [x.item() for x in pred]
@@ -98,7 +104,7 @@ class Translator(object):
                     tokens[i] = src[maxIndex[0]]
         return tokens
 
-    def translateBatch(self, srcBatch, bioBatch, featsBatch, tgtBatch):
+    def translateBatch(self, srcBatch, bioBatch, featsBatch, tgtBatch, ansBatch, ansfeatsBatch):
         batchSize = srcBatch[0].size(1)
         beamSize = self.opt.beam_size
 
@@ -106,7 +112,12 @@ class Translator(object):
         encStates, context = self.model.encoder(srcBatch, bioBatch, featsBatch)
         srcBatch = srcBatch[0]  # drop the lengths needed for encoder
 
-        decStates = self.model.decIniter(encStates[1])  # batch, dec_hidden
+        if self.opt.answer == 'encoder':
+            ans_hidden, _ = self.model.answer_encoder(ansBatch, ansfeatsBatch)
+            ans_hidden = torch.cat((ans_hidden[0], ans_hidden[1]), dim=-1)
+            decStates = self.model.decIniter(ans_hidden)
+        else:
+            decStates = self.model.decIniter(encStates[1])  # batch, dec_hidden
 
         #  (3) run the decoder to generate sentences, using beam search
 
@@ -216,24 +227,24 @@ class Translator(object):
 
         return allHyp, allScores, allIsCopy, allCopyPosition, allAttn, None
 
-    def translate(self, srcBatch, bio_batch, feats_batch, goldBatch):
-        #  (1) convert words to indexes
-        dataset = self.buildData(srcBatch, bio_batch, feats_batch, goldBatch)
-        # (wrap(srcBatch),  lengths), (wrap(tgtBatch), ), indices
-        src, bio, feats, tgt, indices = dataset[0]
-
-        #  (2) translate
-        pred, predScore, predIsCopy, predCopyPosition, attn, _ = self.translateBatch(src, bio, feats, tgt)
-        pred, predScore, predIsCopy, predCopyPosition, attn = list(zip(
-            *sorted(zip(pred, predScore, predIsCopy, predCopyPosition, attn, indices),
-                    key=lambda x: x[-1])))[:-1]
-
-        #  (3) convert indexes to words
-        predBatch = []
-        for b in range(src[0].size(1)):
-            predBatch.append(
-                [self.buildTargetTokens(pred[b][n], srcBatch[b], predIsCopy[b][n], predCopyPosition[b][n], attn[b][n])
-                 for n in range(self.opt.n_best)]
-            )
-
-        return predBatch, predScore, None
+    # def translate(self, srcBatch, bio_batch, feats_batch, goldBatch, ansBatch, ansfeatsBatch):
+    #     #  (1) convert words to indexes
+    #     dataset = self.buildData(srcBatch, bio_batch, feats_batch, goldBatch, ansBatch, ansfeatsBatch)
+    #     # (wrap(srcBatch),  lengths), (wrap(tgtBatch), ), indices
+    #     src, bio, feats, tgt, indices = dataset[0]
+    #
+    #     #  (2) translate
+    #     pred, predScore, predIsCopy, predCopyPosition, attn, _ = self.translateBatch(src, bio, feats, tgt)
+    #     pred, predScore, predIsCopy, predCopyPosition, attn = list(zip(
+    #         *sorted(zip(pred, predScore, predIsCopy, predCopyPosition, attn, indices),
+    #                 key=lambda x: x[-1])))[:-1]
+    #
+    #     #  (3) convert indexes to words
+    #     predBatch = []
+    #     for b in range(src[0].size(1)):
+    #         predBatch.append(
+    #             [self.buildTargetTokens(pred[b][n], srcBatch[b], predIsCopy[b][n], predCopyPosition[b][n], attn[b][n])
+    #              for n in range(self.opt.n_best)]
+    #         )
+    #
+    #     return predBatch, predScore, None
