@@ -13,31 +13,88 @@
 }
 ```
 
+---
+
 ## About this code
 
-Experiments contain the following techniques:
+#### Experiments on model mechanisms contain :
 
-* answer encoding
-
-    - bio embedding in source
-
-    - separate answer encoder
+**include answer info or not**
+1. bio embedding in source
+2. separate answer encoder
    
-* feature encoding
+**feature encoding**
+1. Part-of-Speech tagger
+2. (7-class) Named-Entity-Recognition tagger
+3. Case tagger
+```
+@inproceedings{Manning2014TheSC,
+  title={The Stanford CoreNLP Natural Language Processing Toolkit},
+  author={Christopher D. Manning and Mihai Surdeanu and John Bauer and Jenny Rose Finkel and Steven Bethard and David McClosky},
+  booktitle={ACL},
+  year={2014}
+}
+```
 
-    - POS tag
+**copy mechanism**
+```
+@article{Gu2016IncorporatingCM,
+  title={Incorporating Copying Mechanism in Sequence-to-Sequence Learning},
+  author={Jiatao Gu and Zhengdong Lu and Hang Li and Victor O. K. Li},
+  journal={CoRR},
+  year={2016},
+  volume={abs/1603.06393}
+}
+```
 
-    - NER tag
+**question word mechanism**
+```
+@inproceedings{Sun2018AnswerfocusedAP,
+  title={Answer-focused and Position-aware Neural Question Generation},
+  author={Xingwu Sun and Jing Liu and Yajuan Lyu and Wei He and Yanjun Ma and Shi Wang},
+  booktitle={EMNLP},
+  year={2018}
+}
+```
 
-    - case tag
+**BERT**
+```
+@article{Devlin2018BERTPO,
+  title={BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},
+  author={Jacob Devlin and Ming-Wei Chang and Kenton Lee and Kristina Toutanova},
+  journal={CoRR},
+  year={2018},
+  volume={abs/1810.04805}
+}
+```
 
-* copy mechanism
+**paragraph-level encoding**
+  use gated self-attention
+```
+[2018, EMNLP] Paragraph-level Neural Question Generation with Maxout Pointer and Gated Self-attention Networks
+```
 
-* question word mechanism
+#### Experiments on datasets contain :
 
-* BERT
+**SQuAD**
+```
+@inproceedings{Rajpurkar2016SQuAD10,
+  title={SQuAD: 100, 000+ Questions for Machine Comprehension of Text},
+  author={Pranav Rajpurkar and Jian Zhang and Konstantin Lopyrev and Percy S. Liang},
+  booktitle={EMNLP},
+  year={2016}
+}
+```
 
-* gated self-attention for paragraph-level encoding
+**HotpotQA**
+```
+@inproceedings{Yang2018HotpotQAAD,
+  title={HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering},
+  author={Zhilin Yang and Peng Qi and Saizheng Zhang and Yoshua Bengio and William W. Cohen and Ruslan R. Salakhutdinov and Christopher D. Manning},
+  booktitle={EMNLP},
+  year={2018}
+}
+```
 
 ---
 
