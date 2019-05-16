@@ -17,7 +17,7 @@
 
 ## About this code
 
-#### Experiments on model mechanisms contain :
+### Experiments on model mechanisms contain :
 
 **include answer info or not**
 1. bio embedding in source
@@ -74,7 +74,7 @@
 [2018, EMNLP] Paragraph-level Neural Question Generation with Maxout Pointer and Gated Self-attention Networks
 ```
 
-#### Experiments on datasets contain :
+### Experiments on datasets contain :
 
 **SQuAD**
 ```
