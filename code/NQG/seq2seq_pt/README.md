@@ -27,7 +27,6 @@ seq2seq_pt
 |   └── Eval.py
 ├── CollectVocab.py
 ├── onlinePreprocess.py
-├── trainslate.py
 ├── xargs.py
 ├── run.py
 └── run_squad_qg.sh
