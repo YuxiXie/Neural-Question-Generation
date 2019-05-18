@@ -72,10 +72,10 @@
   use gated self-attention
 ```
 @inproceedings{zhao-etal-2018-paragraph,
-    title = "Paragraph-level Neural Question Generation with Maxout Pointer and Gated Self-attention Networks",
-    author = "Zhao, Yao and Ni, Xiaochuan and Ding, Yuanyuan and Ke, Qifa",
-    booktitle = "Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing",
-    year = "2018"
+    title = {Paragraph-level Neural Question Generation with Maxout Pointer and Gated Self-attention Networks},
+    author = {Zhao, Yao and Ni, Xiaochuan and Ding, Yuanyuan and Ke, Qifa},
+    booktitle = {Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing},
+    year = {2018}
 }
 ```
 
