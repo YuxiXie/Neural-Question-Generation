@@ -107,6 +107,8 @@ def process(data, tokenizer, postagger, nertagger, mode, ref=None):
                 POSs.append(pos)
                 NERs.append(ner)
                 CASEs.append(case)
+                if mode == 'dev':
+                    TGTs.append(qu)
     
     return SRCs, TGTs, ANSs, POSs, NERs, CASEs
 
