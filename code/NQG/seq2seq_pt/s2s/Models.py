@@ -5,7 +5,6 @@ from torch.nn import functional as F
 import s2s.modules
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
-import numpy as np
 
 from pytorch_pretrained_bert import BertModel
 
@@ -110,11 +109,11 @@ class Encoder(nn.Module):
             self.bio_lut = nn.Embedding(8, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
         self.feature = opt.feature
         if self.feature:
-            self.feat_lut = nn.Embedding(58, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
+            self.feat_lut = nn.Embedding(15, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
         if self.answer == 'embedding':
-            input_size += 16
+            input_size += 16    # TODO: Fix this magic number
         if self.feature:
-            input_size += 16 * 3
+            input_size += 16    # TODO: Fix this magic number
 
         self.paragraph = opt.paragraph
         if self.paragraph:
