@@ -31,9 +31,9 @@ python run.py \
        -epochs 20 -optim adam -learning_rate 0.001 \
        -gpus 0 \
        -curriculum 0 -extra_shuffle \
-       -start_eval_batch 500 -eval_per_batch 1000 -halve_lr_bad_count 3 \
+       -start_eval_batch 500 -eval_per_batch 500 -halve_lr_bad_count 3 \
        -seed 12345 -cuda_seed 12345 \
-       -log_interval 500 \
+       -log_interval 100 \
        -dev_input_src ${DATAHOME}/dev/dev.src.txt \
        -dev_ref ${DATAHOME}/dev/dev.tgt.txt \
        -dev_ans ${DATAHOME}/dev/dev.ans.txt \
