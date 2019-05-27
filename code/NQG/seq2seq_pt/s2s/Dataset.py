@@ -137,7 +137,10 @@ class Dataset(object):
                     else:
                         batch = zip(indices, srcBatch, tgtBatch)
         # batch = zip(indices, srcBatch) if tgtBatch is None else zip(indices, srcBatch, tgtBatch)
-        batch, lengths, ans_length = zip(*sorted(zip(batch, lengths, ans_length), key=lambda x: -x[1]))
+        if self.answer == 'encoder':
+            batch, lengths, ans_length = zip(*sorted(zip(batch, lengths, ans_length), key=lambda x: -x[1]))
+        else:
+            batch, lengths = zip(*sorted(zip(batch, lengths), key=lambda x: -x[1]))
         if tgtBatch is None:
             if bioBatch is not None:
                 if featBatches is not None:
@@ -165,10 +168,10 @@ class Dataset(object):
                             indices, srcBatch, ansBatch, *ansfeatBatches, tgtBatch, copySwitchBatch, copyTgtBatch = zip(*batch)
                     else:
                         if featBatches is not None:
-                            indices, srcBatch, ansBatch, *ansfeatBatches, f1, f2, f3, tgtBatch, copySwitchBatch, copyTgtBatch = zip(*batch)
-                            featBatches = [f1, f2, f3]
+                            indices, srcBatch, ansBatch, f1, tgtBatch, copySwitchBatch, copyTgtBatch = zip(*batch)
+                            featBatches = [f1]
                         else:
-                            indices, srcBatch, ansBatch, *ansfeatBatches, tgtBatch, copySwitchBatch, copyTgtBatch = zip(*batch)
+                            indices, srcBatch, ansBatch, tgtBatch, copySwitchBatch, copyTgtBatch = zip(*batch)
                 else:
                     if featBatches is not None:
                         indices, srcBatch, *featBatches, tgtBatch, copySwitchBatch, copyTgtBatch = zip(*batch)
@@ -212,7 +215,8 @@ class Dataset(object):
 
         # wrap lengths in a Variable to properly split it in DataParallel
         lengths = torch.LongTensor(lengths).view(1, -1)
-        ans_length = torch.LongTensor(ans_length).view(1, -1)
+        if self.answer == 'encoder':
+            ans_length = torch.LongTensor(ans_length).view(1, -1)
 
         if featBatches is not None:
             if self.answer == 'encoder':
