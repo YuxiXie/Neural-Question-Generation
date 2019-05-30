@@ -243,7 +243,10 @@ class Decoder(nn.Module):
                                          opt.word_vec_size,
                                          padding_idx=s2s.Constants.PAD)
         self.rnn = StackedGRU(opt.layers, input_size, opt.dec_rnn_size, opt.dropout)
-        self.attn = s2s.modules.ConcatAttention(opt.enc_rnn_size, opt.dec_rnn_size, opt.att_vec_size)
+
+        self.is_coverage = opt.coverage
+        self.attn = s2s.modules.ConcatAttention(opt.enc_rnn_size, opt.dec_rnn_size, opt.att_vec_size, opt.coverage)
+        
         self.dropout = nn.Dropout(opt.dropout)
         self.readout = nn.Linear((opt.enc_rnn_size + opt.dec_rnn_size + opt.word_vec_size), opt.dec_rnn_size)
         self.maxout = s2s.modules.MaxOut(opt.maxout_pool_size)
@@ -254,6 +257,7 @@ class Decoder(nn.Module):
             self.copySwitch = nn.Linear(opt.enc_rnn_size + opt.dec_rnn_size, 1)
 
         self.hidden_size = opt.dec_rnn_size
+        self.device = torch.device("cuda" if opt.gpus else "cpu")
 
     def load_pretrained_vectors(self, opt):
         if opt.pre_word_vecs_dec is not None:
@@ -266,12 +270,13 @@ class Decoder(nn.Module):
         else:
             emb = self.word_lut(input)
 
+        coverage_outputs = []
         g_outputs = []
         c_outputs = []
         copyGateOutputs = []
         cur_context = init_att
         self.attn.applyMask(src_pad_mask)
-        precompute = None
+        precompute, coverage = None, None
 
         for emb_t in emb.split(1):
             emb_t = emb_t.squeeze(0)
@@ -279,7 +284,17 @@ class Decoder(nn.Module):
             if self.input_feed:
                 input_emb = torch.cat([emb_t, cur_context], 1)
             output, hidden = self.rnn(input_emb, hidden)
-            cur_context, attn, precompute = self.attn(output, context.transpose(0, 1), precompute)
+
+            if self.is_coverage:
+                if coverage is None:
+                    coverage = Variable(torch.zeros((context.size(1), context.size(0))))
+                    coverage = coverage.to(self.device)
+                cur_context, attn, precompute, next_coverage = self.attn(output, context.transpose(0, 1), precompute, coverage)
+                coverage_loss = torch.sum(torch.min(attn, coverage), 1)
+                coverage = next_coverage
+                coverage_outputs.append(coverage_loss)
+            else:
+                cur_context, attn, precompute = self.attn(output, context.transpose(0, 1), precompute)
 
             if self.copy:
                 copyProb = self.copySwitch(torch.cat((output, cur_context), dim=1))
@@ -297,9 +312,17 @@ class Decoder(nn.Module):
         if self.copy:
             c_outputs = torch.stack(c_outputs)
             copyGateOutputs = torch.stack(copyGateOutputs)
-            return g_outputs, c_outputs, copyGateOutputs, hidden, attn, cur_context
+            if self.is_coverage:
+                coverage_outputs = torch.stack(coverage_outputs)
+                return g_outputs, c_outputs, copyGateOutputs, hidden, attn, cur_context, coverage_outputs
+            else:
+                return g_outputs, c_outputs, copyGateOutputs, hidden, attn, cur_context
         else:
-            return g_outputs, hidden, attn, cur_context
+            if self.is_coverage:
+                coverage_outputs = torch.stack(coverage_outputs)
+                return g_outputs, hidden, attn, cur_context, coverage_outputs
+            else:
+                return g_outputs, hidden, attn, cur_context
 
 
 class DecInit(nn.Module):
@@ -383,10 +406,20 @@ class NMTModel(nn.Module):
             enc_hidden = self.decIniter(enc_hidden[1]).unsqueeze(0)  # [1] is the last backward hidden
 
         if self.decoder.copy:
-            g_out, c_out, c_gate_out, dec_hidden, _attn, _attention_vector \
-                = self.decoder(tgt, enc_hidden, context,  src_pad_mask, init_att)
-            return g_out, c_out, c_gate_out
+            if self.decoder.is_coverage:
+                g_out, c_out, c_gate_out, dec_hidden, _attn, _attention_vector, coverage_out \
+                    = self.decoder(tgt, enc_hidden, context,  src_pad_mask, init_att)
+                return g_out, c_out, c_gate_out, coverage_out
+            else:
+                g_out, c_out, c_gate_out, dec_hidden, _attn, _attention_vector \
+                    = self.decoder(tgt, enc_hidden, context,  src_pad_mask, init_att)
+                return g_out, c_out, c_gate_out
         else:
-            g_out, dec_hidden, _attn, _attention_vector \
-                = self.decoder(tgt, enc_hidden, context, src_pad_mask, init_att)
-            return g_out
+            if self.decoder.is_coverage:
+                g_out, dec_hidden, _attn, _attention_vector, coverage_out \
+                    = self.decoder(tgt, enc_hidden, context, src_pad_mask, init_att)
+                return g_out, coverage_out
+            else:
+                g_out, dec_hidden, _attn, _attention_vector \
+                    = self.decoder(tgt, enc_hidden, context, src_pad_mask, init_att)
+                return g_out
