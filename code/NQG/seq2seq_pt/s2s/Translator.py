@@ -136,11 +136,19 @@ class Translator(object):
             input = torch.stack([b.getCurrentState() for b in beam
                                  if not b.done]).transpose(0, 1).contiguous().view(1, -1)
             if self.opt.copy:
-                g_outputs, c_outputs, copyGateOutputs, decStates, attn, att_vec = \
-                    self.model.decoder(input, decStates, context, padMask.view(-1, padMask.size(2)), att_vec)
+                if self.opt.coverage:
+                    g_outputs, c_outputs, copyGateOutputs, decStates, attn, att_vec, coverage_outputs = \
+                        self.model.decoder(input, decStates, context, padMask.view(-1, padMask.size(2)), att_vec)
+                else:
+                    g_outputs, c_outputs, copyGateOutputs, decStates, attn, att_vec = \
+                        self.model.decoder(input, decStates, context, padMask.view(-1, padMask.size(2)), att_vec)
             else:
-                g_outputs, decStates, attn, att_vec = \
-                    self.model.decoder(input, decStates, context, padMask.view(-1, padMask.size(2)), att_vec)
+                if self.opt.coverage:
+                    g_outputs, decStates, attn, att_vec, coverage_outputs = \
+                        self.model.decoder(input, decStates, context, padMask.view(-1, padMask.size(2)), att_vec)
+                else:
+                    g_outputs, decStates, attn, att_vec = \
+                        self.model.decoder(input, decStates, context, padMask.view(-1, padMask.size(2)), att_vec)
 
             # g_outputs: 1 x (beam*batch) x numWords
             g_outputs = g_outputs.squeeze(0)
