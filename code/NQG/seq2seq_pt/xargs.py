@@ -83,6 +83,10 @@ def add_model_options(parser):
                         [concat|sum]""")
     parser.add_argument('-copy', action='store_true', default=False,
                         help="""Use a copy mechanism""")
+    parser.add_argument('-coverage', action='store_true', default=False,
+                        help="""Use a coverage mechanism""")
+    parser.add_argument('-coverage_weight', type=float, default=1.0, 
+                        help="""Weight of the loss of coverage mechanism in final total loss""")
     parser.add_argument('-answer', default='',
                         help=""""Define how to encode answer""")
     parser.add_argument('-answer_brnn', action='store_true', default=False,
