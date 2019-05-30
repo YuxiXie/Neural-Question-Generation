@@ -47,13 +47,13 @@
 }
 ```
 
-**question word mechanism**
+**coverage mechanism**
 ```
-@inproceedings{Sun2018AnswerfocusedAP,
-  title={Answer-focused and Position-aware Neural Question Generation},
-  author={Xingwu Sun and Jing Liu and Yajuan Lyu and Wei He and Yanjun Ma and Shi Wang},
-  booktitle={EMNLP},
-  year={2018}
+@inproceedings{See2017GetTT,
+  title={Get To The Point: Summarization with Pointer-Generator Networks},
+  author={Abigail See and Peter J. Liu and Christopher D. Manning},
+  booktitle={ACL},
+  year={2017}
 }
 ```
 
