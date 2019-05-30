@@ -38,7 +38,7 @@ class NLLLoss(Loss):
 
     _NAME = "NLLLoss"
 
-    def __init__(self, weight=None, mask=None, size_average=True, copy_loss=True):
+    def __init__(self, weight=None, mask=None, size_average=True, copy_loss=False, coverage_loss=False, coverage_weight=None):
         self.mask = mask
         self.size_average = size_average
         if mask is not None:
@@ -50,10 +50,13 @@ class NLLLoss(Loss):
             self._NAME,
             nn.NLLLoss(weight=weight, size_average=size_average))
 
-        self.copy = False
+        self.copy = copy_loss
         if copy_loss:
-            self.copy = True
             self.copy_loss = nn.NLLLoss(size_average=False)
+        
+        self.coverage = coverage_loss
+        if coverage_loss:
+            self.coverage_weight = coverage_weight
 
     def get_loss(self):
         if isinstance(self.acc_loss, int):
@@ -70,7 +73,7 @@ class NLLLoss(Loss):
         self.norm_term += 1
 
     def loss_function(self, g_outputs, g_targets, generator, c_outputs=None, c_switch=None,
-                      c_targets=None, c_gate_values=None):
+                      c_targets=None, c_gate_values=None, coverage_outputs=None):
         batch_size = g_outputs.size(1)
 
         g_out_t = g_outputs.view(-1, g_outputs.size(2))
@@ -97,6 +100,13 @@ class NLLLoss(Loss):
             g_prob_t_log = g_prob_t_log.view(-1, g_prob_t_log.size(2))
             g_loss = self.criterion(g_prob_t_log, g_targets.view(-1))
             total_loss = g_loss
-
-        report_loss = total_loss.item()
+        
+        if self.coverage:
+            coverage_outputs = [co for co in coverage_outputs]
+            coverage_loss = torch.sum(torch.stack(coverage_outputs, 1), 1)
+            coverage_loss = torch.sum(coverage_loss, 0)
+            report_loss = total_loss.item()
+            total_loss = total_loss + coverage_loss * self.coverage_weight
+        else:
+            report_loss = total_loss.item()
         return total_loss, report_loss, 0
