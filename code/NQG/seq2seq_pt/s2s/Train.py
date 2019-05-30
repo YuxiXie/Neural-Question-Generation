@@ -106,7 +106,7 @@ class SupervisedTrainer(object):
                         c_outputs=c_outputs, c_switch=copy_switch, c_targets=c_targets, 
                         c_gate_values=c_gate_values)
             else:
-                if self.opt.is_coverage:
+                if self.opt.coverage:
                     g_outputs, coverage_outputs = self.model(batch) 
                     loss, res_loss, num_correct = self.loss.loss_function(
                         g_outputs=g_outputs, g_targets=targets, generator=self.model.generator,
@@ -196,7 +196,7 @@ class SupervisedTrainer(object):
                         if self.loss.copy:
                             copy_switch = batch[index][1][1:]
                             c_targets = batch[index][2][1:]
-                            if self.opt.is_coverage:
+                            if self.opt.coverage:
                                 g_outputs, c_outputs, c_gate_values, coverage_outputs = self.model(batch)
                                 loss, res_loss, num_correct = self.loss.loss_function(
                                     g_outputs=g_outputs, g_targets=targets, generator=self.model.generator, 
@@ -209,7 +209,7 @@ class SupervisedTrainer(object):
                                     c_outputs=c_outputs, c_switch=copy_switch, c_targets=c_targets, 
                                     c_gate_values=c_gate_values)
                         else:
-                            if self.opt.is_coverage:
+                            if self.opt.coverage:
                                 g_outputs, coverage_outputs = self.model(batch)
                                 loss, res_loss, num_correct = self.loss.loss_function(
                                     g_outputs=g_outputs, g_targets=targets, 
