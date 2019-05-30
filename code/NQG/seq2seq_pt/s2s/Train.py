@@ -4,7 +4,6 @@ import os
 import s2s
 import torch
 import torch.nn as nn
-from torch import cuda
 from s2s.Eval import Evaluator
 import math
 import time
@@ -88,18 +87,34 @@ class SupervisedTrainer(object):
                 index = 3
             else:
                 index = 2
-
+            
+            targets = batch[index][0][1:]  # exclude <s> from targets
             if self.loss.copy:
-                g_outputs, c_outputs, c_gate_values = self.model(batch)
                 copy_switch = batch[index][1][1:]
                 c_targets = batch[index][2][1:]
-                targets = batch[index][0][1:]  # exclude <s> from targets
-                loss, res_loss, num_correct = self.loss.loss_function(g_outputs, targets,
-                    self.model.generator, c_outputs, copy_switch, c_targets, c_gate_values)
+                
+                if self.opt.coverage:
+                    g_outputs, c_outputs, c_gate_values, coverage_outputs = self.model(batch)
+                    loss, res_loss, num_correct = self.loss.loss_function(
+                        g_outputs=g_outputs, g_targets=targets, generator=self.model.generator, 
+                        c_outputs=c_outputs, c_switch=copy_switch, c_targets=c_targets, 
+                        c_gate_values=c_gate_values, coverage_outputs=coverage_outputs)
+                else:
+                    g_outputs, c_outputs, c_gate_values = self.model(batch)                    
+                    loss, res_loss, num_correct = self.loss.loss_function(
+                        g_outputs=g_outputs, g_targets=targets, generator=self.model.generator, 
+                        c_outputs=c_outputs, c_switch=copy_switch, c_targets=c_targets, 
+                        c_gate_values=c_gate_values)
             else:
-                g_outputs = self.model(batch)
-                targets = batch[index][0][1:]  # exclude <s> from targets
-                loss, res_loss, num_correct = self.loss.loss_function(g_outputs, targets, self.model.generator)
+                if self.opt.is_coverage:
+                    g_outputs, coverage_outputs = self.model(batch) 
+                    loss, res_loss, num_correct = self.loss.loss_function(
+                        g_outputs=g_outputs, g_targets=targets, generator=self.model.generator,
+                        coverage_outputs=coverage_outputs)
+                else:
+                    g_outputs = self.model(batch)                    
+                    loss, res_loss, num_correct = self.loss.loss_function(
+                        g_outputs=g_outputs, g_targets=targets, generator=self.model.generator)
 
             if math.isnan(res_loss) or res_loss > 1e20:
                 self.logger.info('catch NaN')
@@ -177,17 +192,33 @@ class SupervisedTrainer(object):
                     self.logger.warning("Set model to {0} mode".format('train' if self.model.decoder.dropout.training else 'eval'))
                     for i in range(len(devData)):
                         batch = devData[i][:-1]
+                        targets = batch[index][0][1:]  # exclude <s> from targets
                         if self.loss.copy:
-                            g_outputs, c_outputs, c_gate_values = self.model(batch)
-                            targets = batch[index][0][1:]  # exclude <s> from targets
                             copy_switch = batch[index][1][1:]
                             c_targets = batch[index][2][1:]
-                            loss, res_loss, num_correct = self.loss.loss_function(g_outputs, targets,
-                                self.model.generator, c_outputs, copy_switch, c_targets, c_gate_values)
+                            if self.opt.is_coverage:
+                                g_outputs, c_outputs, c_gate_values, coverage_outputs = self.model(batch)
+                                loss, res_loss, num_correct = self.loss.loss_function(
+                                    g_outputs=g_outputs, g_targets=targets, generator=self.model.generator, 
+                                    c_outputs=c_outputs, c_switch=copy_switch, c_targets=c_targets, 
+                                    c_gate_values=c_gate_values, coverage_outputs=coverage_outputs)
+                            else:
+                                g_outputs, c_outputs, c_gate_values = self.model(batch)
+                                loss, res_loss, num_correct = self.loss.loss_function(
+                                    g_outputs=g_outputs, g_targets=targets, generator=self.model.generator, 
+                                    c_outputs=c_outputs, c_switch=copy_switch, c_targets=c_targets, 
+                                    c_gate_values=c_gate_values)
                         else:
-                            g_outputs = self.model(batch)
-                            targets = batch[index][0][1:]  # exclude <s> from targets
-                            loss, res_loss, num_correct = self.loss.loss_function(g_outputs, targets, self.model.generator)
+                            if self.opt.is_coverage:
+                                g_outputs, coverage_outputs = self.model(batch)
+                                loss, res_loss, num_correct = self.loss.loss_function(
+                                    g_outputs=g_outputs, g_targets=targets, 
+                                    generator=self.model.generator, coverage_outputs=coverage_outputs)
+                            else:
+                                g_outputs = self.model(batch)
+                                loss, res_loss, num_correct = self.loss.loss_function(
+                                    g_outputs=g_outputs, g_targets=targets, 
+                                    generator=self.model.generator)
                         num_words = targets.data.ne(s2s.Constants.PAD).sum().item()
                         report_loss += res_loss
                         report_tgt_words += num_words
