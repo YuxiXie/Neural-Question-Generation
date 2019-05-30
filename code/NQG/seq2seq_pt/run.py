@@ -83,7 +83,7 @@ def load_dev_data(translator, src_file, bio_file, feat_files, tgt_file, ans_file
 
 
 ############################## parse the options ##############################
-parser = argparse.ArgumentParser(description='train.py')
+parser = argparse.ArgumentParser(description='run.py')
 xargs.add_data_options(parser)
 xargs.add_model_options(parser)
 xargs.add_train_options(parser)
@@ -232,7 +232,8 @@ if opt.dev_input_src and opt.dev_ref:
 vocabSize = dataset['dicts']['tgt'].size()
 weight = torch.ones(vocabSize)
 weight[s2s.Constants.PAD] = 0
-loss = s2s.Loss.NLLLoss(weight, size_average=False, copy_loss=opt.copy)
+loss = s2s.Loss.NLLLoss(weight, size_average=False, copy_loss=opt.copy, 
+                        coverage_loss=opt.coverage, coverage_weight=opt.coverage_weight)
 if opt.gpus:
     loss.cuda()
 
