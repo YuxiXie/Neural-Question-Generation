@@ -133,7 +133,7 @@ from onlinePreprocess import prepare_data_online
 dataset = prepare_data_online(opt.copy, opt.answer, opt.feature, opt.answer_feature,
                               opt.train_src, opt.src_vocab, opt.train_bio, opt.bio_vocab,
                               opt.train_feats, opt.feat_vocab, opt.train_tgt, opt.tgt_vocab,
-                              opt.train_ans, opt.ans_vocab, opt.train_ans_feats)
+                              opt.train_ans, opt.ans_vocab, opt.train_ans_feats, opt.bert)
 trainData = s2s.Dataset(dataset['train']['src'], dataset['train']['bio'], dataset['train']['feats'],
                         dataset['train']['tgt'], dataset['train']['switch'], dataset['train']['c_tgt'],
                         dataset['train']['ans'], dataset['train']['ans-feats'],
@@ -154,11 +154,18 @@ decoder = s2s.Models.Decoder(opt, dicts['tgt'])
 if opt.answer == 'encoder':
     answer_encoder = s2s.Models.AnswerEncoder(opt, dicts['ans'].size())
 decIniter = s2s.Models.DecInit(opt)
-generator = nn.Sequential(
-    nn.Linear(opt.dec_rnn_size // opt.maxout_pool_size, dicts['tgt'].size()),  # TODO: fix here
-    # nn.LogSoftmax(dim=1)
-    nn.Softmax(dim=1)
-)
+if opt.bert:
+    generator = nn.Sequential(
+        nn.Linear(opt.dec_rnn_size // opt.maxout_pool_size, 30000),  # TODO: fix here
+        # nn.LogSoftmax(dim=1)
+        nn.Softmax(dim=1)
+    )
+else:
+    generator = nn.Sequential(
+        nn.Linear(opt.dec_rnn_size // opt.maxout_pool_size, dicts['tgt'].size()),  # TODO: fix here
+        # nn.LogSoftmax(dim=1)
+        nn.Softmax(dim=1)
+    )
 
 if opt.resume:
     dict_en, dict_de, dict_in = {}, {}, {}
@@ -220,7 +227,7 @@ if opt.dev_input_src and opt.dev_ref:
 
     if opt.result_path:
         dev_dataset = prepare_data_online(opt.copy, opt.answer, opt.feature, opt.answer_feature, opt.dev_input_src, opt.src_vocab, opt.dev_bio, opt.bio_vocab, opt.dev_feats,
-                                      opt.feat_vocab, opt.dev_ref, opt.tgt_vocab, opt.dev_ans, opt.ans_vocab, opt.dev_ans_feats)
+                                      opt.feat_vocab, opt.dev_ref, opt.tgt_vocab, opt.dev_ans, opt.ans_vocab, opt.dev_ans_feats, opt.bert)
         devData = s2s.Dataset(dev_dataset['train']['src'], dev_dataset['train']['bio'], dev_dataset['train']['feats'],
                               dev_dataset['train']['tgt'], dev_dataset['train']['switch'], dev_dataset['train']['c_tgt'],
                               dev_dataset['train']['ans'], dev_dataset['train']['ans-feats'], opt.batch_size, opt.gpus, opt.copy, opt.answer, opt.feature, opt.answer_feature)
@@ -230,10 +237,12 @@ if opt.dev_input_src and opt.dev_ref:
 
 ############################## define and prepare loss ##############################
 vocabSize = dataset['dicts']['tgt'].size()
-weight = torch.ones(vocabSize)
+if opt.bert:
+    vocabSize = 30000
+weight = torch.ones(vocabSize)  # TODO: fix here
 weight[s2s.Constants.PAD] = 0
 loss = s2s.Loss.NLLLoss(weight, size_average=False, copy_loss=opt.copy, 
-                        coverage_loss=opt.coverage, coverage_weight=opt.coverage_weight)
+                        coverage_loss=opt.coverage, coverage_weight=opt.coverage_weight)  # TODO: fix here
 if opt.gpus:
     loss.cuda()
 
