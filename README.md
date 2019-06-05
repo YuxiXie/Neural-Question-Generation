@@ -24,6 +24,20 @@
 2. separate answer encoder
 
 **position embedding used in cross attention**
+
+**question word**
+```
+@inproceedings{sun-etal-2018-answer,
+    title = "Answer-focused and Position-aware Neural Question Generation",
+    author = "Sun, Xingwu and Liu, Jing  and Lyu, Yajuan  and He, Wei  and Ma, Yanjun  and Wang, Shi",
+    booktitle = "Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing",
+    year = "2018",
+    address = "Brussels, Belgium",
+    publisher = "Association for Computational Linguistics",
+    url = "https://www.aclweb.org/anthology/D18-1427",
+    pages = "3930--3939"
+}
+```
    
 **feature encoding**
 1. Part-of-Speech tagger
