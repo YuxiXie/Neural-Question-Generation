@@ -22,6 +22,8 @@
 **include answer info or not**
 1. bio embedding in source
 2. separate answer encoder
+
+**position embedding used in cross attention**
    
 **feature encoding**
 1. Part-of-Speech tagger
