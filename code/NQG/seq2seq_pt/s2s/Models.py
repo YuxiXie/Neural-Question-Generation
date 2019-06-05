@@ -7,6 +7,7 @@ from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 
 from pytorch_pretrained_bert import BertModel
+from torch import cuda
 
 try:
     import ipdb
@@ -88,32 +89,37 @@ class AnswerEncoder(nn.Module):
 
 class Encoder(nn.Module):
     def __init__(self, opt, dicts, answer_size=None):
+        self.bert = opt.bert
+
+        self.device = torch.device("cuda" if opt.gpus else "cpu")
         self.layers = opt.layers
         self.num_directions = 2 if opt.brnn else 1
         assert opt.enc_rnn_size % self.num_directions == 0
         self.hidden_size = opt.enc_rnn_size // self.num_directions
+        
         input_size = opt.word_vec_size
         if opt.bert:
             input_size = 768
 
         super(Encoder, self).__init__()
-        self.bert = opt.bert
         if opt.bert:
-            self.word_lut = BertModel.from_pretrained('bert-base-uncased')
+            self.word_lut = BertModel.from_pretrained('/home/xieyuxi/bert/bert-base-uncased/')
         else:
-            self.word_lut = nn.Embedding(dicts.size(),
-                                         opt.word_vec_size,
-                                         padding_idx=s2s.Constants.PAD)
+            self.word_lut = nn.Embedding(dicts.size(), opt.word_vec_size, padding_idx=s2s.Constants.PAD)
         self.answer = opt.answer
         if self.answer == 'embedding':
-            self.bio_lut = nn.Embedding(8, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
+            self.bio_lut = nn.Embedding(7, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
         self.feature = opt.feature
         if self.feature:
-            self.feat_lut = nn.Embedding(15, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
+            self.feat_lut = nn.Embedding(63, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
         if self.answer == 'embedding':
             input_size += 16    # TODO: Fix this magic number
         if self.feature:
-            input_size += 16    # TODO: Fix this magic number
+            input_size += 16 * 3    # TODO: Fix this magic number
+        
+        self.position = opt.position
+        if opt.position:
+            self.pos_lut = nn.Embedding(128, 16, padding_idx=s2s.Constants.PAD)  # TODO: Fix this magic number
 
         self.paragraph = opt.paragraph
         if self.paragraph:
@@ -142,7 +148,7 @@ class Encoder(nn.Module):
         inputs = torch.cat([queries, context], dim=2)
 
         # [b, l, h*2] ——> [b, l, h]
-        f_t = torch.tanh(self.update_layer(inputs))
+        f_t =  torch.tanh(self.update_layer(inputs))
         # [b, l, h*2] ——> [b, l, h] ——> [b, 1] ?
         g_t = torch.sigmoid(self.gate(inputs))
 
@@ -152,13 +158,39 @@ class Encoder(nn.Module):
         return updated_output
 
     def forward(self, input, bio, feats, hidden=None):
+        #print(feats[0])
         lengths = input[-1].data.view(-1).tolist()  # lengths data is wrapped inside a Variable
         if self.bert:
-            wordEmb, _ = self.word_lut(input_ids=input[0], output_encoded_layers=False)
+            wordEmb = self.word_lut(input[0].transpose(0, 1), output_all_encoded_layers=False)[0]
+            wordEmb = wordEmb.transpose(0, 1)
         else:
             wordEmb = self.word_lut(input[0])
+        
         if self.answer == 'embedding':
             bioEmb = self.bio_lut(bio[0])
+            if self.position:
+                position = bio[0].transpose(0, 1)
+                def get_pos(sent):
+                    pos = [w for w in sent]
+                    b = list(sent).index(6)
+                    i = b 
+                    while i < len(sent) - 1 and sent[i + 1] in [5, 6]:
+                        i += 1
+                    e = i
+                    for i, w in enumerate(pos):
+                        if i < b and sent[i] in [4, 5, 6]:
+                            pos[i] = b - i 
+                        elif i > e and sent[i] in [4, 5, 6]:
+                            pos[i] = i - e
+                        elif sent[i] in [4, 5, 6]:
+                            pos[i] = 120
+                    return pos
+                position = [get_pos(sent) for sent in position]
+                position = torch.LongTensor(position)
+                position = position.transpose(0, 1)
+                position = position.to(self.device)
+                posEmb = self.pos_lut(position)
+
             if self.feature:
                 featsEmb = [self.feat_lut(feat) for feat in feats[0]]
                 featsEmb = torch.cat(featsEmb, dim=-1)
@@ -193,6 +225,9 @@ class Encoder(nn.Module):
             memories = self.linear_trans(tp_outputs)
             tp_outputs = self.gated_self_attn(tp_outputs, memories, mask)
             outputs = tp_outputs.transpose(0, 1)
+        
+        if self.position:
+            outputs = (outputs, posEmb)
 
         return hidden_t, outputs
 
@@ -226,35 +261,54 @@ class StackedGRU(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, opt, dicts):
         self.opt = opt
+
+        self.bert = opt.bert
+
         self.layers = opt.layers
         self.input_feed = opt.input_feed
+
         input_size = opt.word_vec_size
         if opt.bert:
             input_size = 768
+
         if self.input_feed:
             input_size += opt.enc_rnn_size
+            if opt.position:
+                input_size += 16
 
         super(Decoder, self).__init__()
-        self.bert = opt.bert
         if opt.bert:
-            self.word_lut = BertModel.from_pretrained('bert-base-uncased')
+            self.word_lut = BertModel.from_pretrained('/home/xieyuxi/bert/bert-base-uncased/')
         else:
-            self.word_lut = nn.Embedding(dicts.size(),
-                                         opt.word_vec_size,
-                                         padding_idx=s2s.Constants.PAD)
+            self.word_lut = nn.Embedding(dicts.size(), opt.word_vec_size, padding_idx=s2s.Constants.PAD)
         self.rnn = StackedGRU(opt.layers, input_size, opt.dec_rnn_size, opt.dropout)
 
         self.is_coverage = opt.coverage
-        self.attn = s2s.modules.ConcatAttention(opt.enc_rnn_size, opt.dec_rnn_size, opt.att_vec_size, opt.coverage)
+
+        self.position = opt.position
+        if opt.position:
+            self.attn = s2s.modules.ConcatAttention(opt.enc_rnn_size + 16, opt.dec_rnn_size, opt.att_vec_size, opt.coverage)  # TODO: Fix this magic number
+        else:
+            self.attn = s2s.modules.ConcatAttention(opt.enc_rnn_size, opt.dec_rnn_size, opt.att_vec_size, opt.coverage)
         
         self.dropout = nn.Dropout(opt.dropout)
-        self.readout = nn.Linear((opt.enc_rnn_size + opt.dec_rnn_size + opt.word_vec_size), opt.dec_rnn_size)
+        if opt.bert:
+            word_vec_size = 768
+        else:
+            word_vec_size = opt.word_vec_size
+        if opt.position:
+            self.readout = nn.Linear((opt.enc_rnn_size + 16 + opt.dec_rnn_size + word_vec_size), opt.dec_rnn_size)
+        else:
+            self.readout = nn.Linear((opt.enc_rnn_size + opt.dec_rnn_size + word_vec_size), opt.dec_rnn_size)
         self.maxout = s2s.modules.MaxOut(opt.maxout_pool_size)
         self.maxout_pool_size = opt.maxout_pool_size
 
         self.copy = opt.copy
         if self.copy:
-            self.copySwitch = nn.Linear(opt.enc_rnn_size + opt.dec_rnn_size, 1)
+            if opt.position:
+                self.copySwitch = nn.Linear(opt.enc_rnn_size + 16 + opt.dec_rnn_size, 1)
+            else:
+                self.copySwitch = nn.Linear(opt.enc_rnn_size + opt.dec_rnn_size, 1)
 
         self.hidden_size = opt.dec_rnn_size
         self.device = torch.device("cuda" if opt.gpus else "cpu")
@@ -266,7 +320,8 @@ class Decoder(nn.Module):
 
     def forward(self, input, hidden, context, src_pad_mask, init_att):
         if self.bert:
-            emb, _ = self.word_lut(input_ids=input, output_encoded_layers=False)
+            emb = self.word_lut(input.transpose(0, 1), output_all_encoded_layers=False)[0]
+            emb = emb.transpose(0, 1)
         else:
             emb = self.word_lut(input)
 
@@ -277,6 +332,8 @@ class Decoder(nn.Module):
         cur_context = init_att
         self.attn.applyMask(src_pad_mask)
         precompute, coverage = None, None
+        if isinstance(context, tuple):
+            context = torch.cat(context, dim=-1)
 
         for emb_t in emb.split(1):
             emb_t = emb_t.squeeze(0)
@@ -301,12 +358,11 @@ class Decoder(nn.Module):
                 copyProb = F.sigmoid(copyProb)
                 c_outputs += [attn]
                 copyGateOutputs += [copyProb]
-
             readout = self.readout(torch.cat((emb_t, output, cur_context), dim=1))
             maxout = self.maxout(readout)
             output = self.dropout(maxout)
             g_outputs += [output]
-
+            
         g_outputs = torch.stack(g_outputs)
 
         if self.copy:
@@ -354,8 +410,13 @@ class NMTModel(nn.Module):
         self.decIniter = decIniter
 
     def make_init_att(self, context):
-        batch_size = context.size(1)
-        h_size = (batch_size, self.encoder.hidden_size * self.encoder.num_directions)
+        if isinstance(context, tuple):
+            batch_size = context[0].size(1)
+            h_size = (batch_size, self.encoder.hidden_size * self.encoder.num_directions + 16)
+            context = torch.cat(context, dim=-1)
+        else:
+            batch_size = context.size(1)
+            h_size = (batch_size, self.encoder.hidden_size * self.encoder.num_directions)
         return Variable(context.data.new(*h_size).zero_(), requires_grad=False)
 
     def flatten_parameters(self):
@@ -394,6 +455,7 @@ class NMTModel(nn.Module):
         elif self.encoder.answer == 'embedding':
             bio = input[1]
 
+        #print(feats[0])
         enc_hidden, context = self.encoder(src, bio, feats)
 
         init_att = self.make_init_att(context)
