@@ -2,6 +2,7 @@ import s2s
 import torch.nn as nn
 import torch
 from torch.autograd import Variable
+from pytorch_pretrained_bert import BertTokenizer
 
 try:
     import ipdb
@@ -12,6 +13,9 @@ except ImportError:
 class Translator(object):
     def __init__(self, opt, model=None, dataset=None):
         self.opt = opt
+
+        if opt.bert:
+            self.tokenizer = BertTokenizer.from_pretrained('/home/xieyuxi/bert/bert-base-uncased-vocab.txt')
 
         if model is None:
 
@@ -67,7 +71,10 @@ class Translator(object):
         self.copyCount = 0
 
     def buildData(self, srcBatch, bioBatch, featsBatch, goldBatch, ansBatch, ansfeatsBatch):
-        srcData = [self.src_dict.convertToIdx(b, s2s.Constants.UNK_WORD) for b in srcBatch]
+        if self.opt.bert:
+            srcData = [torch.LongTensor(self.tokenizer.convert_tokens_to_ids(b)) for b in srcBatch]
+        else:
+            srcData = [self.src_dict.convertToIdx(b, s2s.Constants.UNK_WORD) for b in srcBatch]
         bioData, featsData, ansData, ansfeatsData = None, None, None, None
         if self.opt.answer == 'encoder':
             ansData = [self.ans_dict.convertToIdx(b, s2s.Constants.UNK_WORD) for b in ansBatch]
@@ -79,10 +86,11 @@ class Translator(object):
             featsData = [[self.feats_dict.convertToIdx(x, s2s.Constants.UNK_WORD) for x in b] for b in featsBatch]
         tgtData = None
         if goldBatch:
-            tgtData = [self.tgt_dict.convertToIdx(b,
-                                                  s2s.Constants.UNK_WORD,
-                                                  s2s.Constants.BOS_WORD,
-                                                  s2s.Constants.EOS_WORD) for b in goldBatch]
+            if self.opt.bert:
+                tgtData = [torch.LongTensor(self.tokenizer.convert_tokens_to_ids(b)) for b in goldBatch]
+            else:
+                tgtData = [self.tgt_dict.convertToIdx(b, s2s.Constants.UNK_WORD,
+                                s2s.Constants.BOS_WORD, s2s.Constants.EOS_WORD) for b in goldBatch]
 
         return s2s.Dataset(srcData, bioData, featsData, tgtData, None, None, ansData, ansfeatsData, self.opt.batch_size, self.opt.cuda, self.opt.copy, self.opt.answer, self.opt.feature, self.opt.answer_feature)
 
