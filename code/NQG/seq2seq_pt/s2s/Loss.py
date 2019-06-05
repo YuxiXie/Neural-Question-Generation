@@ -91,7 +91,6 @@ class NLLLoss(Loss):
 
             g_output_prob_log = g_output_prob_log.view(-1, g_output_prob_log.size(2))
             c_output_prob_log = c_output_prob_log.view(-1, c_output_prob_log.size(2))
-
             g_loss = self.criterion(g_output_prob_log, g_targets.view(-1))
             c_loss = self.copy_loss(c_output_prob_log, c_targets.view(-1))
             total_loss = g_loss + c_loss
