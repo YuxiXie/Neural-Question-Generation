@@ -1,6 +1,7 @@
 import logging
 import torch
 import s2s
+from pytorch_pretrained_bert import BertTokenizer
 
 try:
     import ipdb
@@ -56,7 +57,10 @@ def saveVocabulary(name, vocab, file):
     vocab.writeFile(file)
 
 
-def makeData(copy, answer, feature, answer_feature, srcFile, bioFile, featFiles, tgtFile, srcDicts, bioDicts, featDicts, tgtDicts, ansFile=None, ansDicts=None, ansfeatFiles=None, ansfeatDicts=None):
+def makeData(copy, answer, feature, answer_feature, srcFile, bioFile, 
+             featFiles, tgtFile, srcDicts, bioDicts, featDicts, tgtDicts, 
+             ansFile=None, ansDicts=None, ansfeatFiles=None, ansfeatDicts=None,
+             bert=False, tokenizer=None):
     src, tgt, ans = [], [], []
     bio = []
     ansfeats = []
@@ -124,9 +128,17 @@ def makeData(copy, answer, feature, answer_feature, srcFile, bioFile, featFiles,
             bioWords = bioLine.split(' ')
         if feature:
             featWords = [x.split(' ') for x in featLines]
+        
+        if bert:
+            max_seq_length = seq_length + 2
+        else:
+            max_seq_length = seq_length
 
-        if len(srcWords) <= seq_length and len(tgtWords) <= seq_length:
-            src += [srcDicts.convertToIdx(srcWords, s2s.Constants.UNK_WORD)]
+        if len(srcWords) <= seq_length and len(tgtWords) <= max_seq_length:
+            if bert:
+                src += [torch.LongTensor(tokenizer.convert_tokens_to_ids(srcWords))]
+            else:
+                src += [srcDicts.convertToIdx(srcWords, s2s.Constants.UNK_WORD)]
             if answer == 'encoder':
                 ans += [ansDicts.convertToIdx(ansWords, s2s.Constants.UNK_WORD)]
                 if answer_feature:
@@ -135,20 +147,33 @@ def makeData(copy, answer, feature, answer_feature, srcFile, bioFile, featFiles,
                 bio += [bioDicts.convertToIdx(bioWords, s2s.Constants.UNK_WORD)]
             if feature:
                 feats += [[featDicts.convertToIdx(x, s2s.Constants.UNK_WORD) for x in featWords]]
-            tgt += [tgtDicts.convertToIdx(tgtWords,
-                                          s2s.Constants.UNK_WORD,
-                                          s2s.Constants.BOS_WORD,
-                                          s2s.Constants.EOS_WORD)]
+            if bert:
+                tgt += [torch.LongTensor(tokenizer.convert_tokens_to_ids(tgtWords))]
+            else:
+                tgt += [tgtDicts.convertToIdx(tgtWords, s2s.Constants.UNK_WORD,
+                                              s2s.Constants.BOS_WORD, s2s.Constants.EOS_WORD)]
             if copy:
-                switch_buf = [0] * (len(tgtWords) + 2)
-                c_tgt_buf = [0] * (len(tgtWords) + 2)
+                if bert:
+                    switch_buf = [0] * len(tgtWords)
+                    c_tgt_buf = [0] * len(tgtWords)
+                else:
+                    switch_buf = [0] * (len(tgtWords) + 2)
+                    c_tgt_buf = [0] * (len(tgtWords) + 2)
                 for idx, tgt_word in enumerate(tgtWords):
-                    word_id = tgtDicts.lookup(tgt_word, None)
+                    if bert:
+                        word_id = tokenizer.convert_tokens_to_ids([tgt_word])
+                        word_id = word_id[0]
+                    else:
+                        word_id = tgtDicts.lookup(tgt_word, None)
                     if word_id is None:
                         if tgt_word in srcWords:
                             copy_position = srcWords.index(tgt_word)
-                            switch_buf[idx + 1] = 1
-                            c_tgt_buf[idx + 1] = copy_position
+                            if bert:
+                                switch_buf[idx] = 1
+                                c_tgt_buf[idx] = copy_position
+                            else:
+                                switch_buf[idx + 1] = 1
+                                c_tgt_buf[idx + 1] = copy_position
                 switch.append(torch.FloatTensor(switch_buf))
                 c_tgt.append(torch.LongTensor(c_tgt_buf))
 
@@ -225,7 +250,8 @@ def makeData(copy, answer, feature, answer_feature, srcFile, bioFile, featFiles,
 def prepare_data_online(copy, answer, feature, ans_feature, 
                         train_src, src_vocab, train_bio, bio_vocab,
                         train_feats, feat_vocab, train_tgt, tgt_vocab,
-                        train_ans=None, ans_vocab=None, train_ans_feats=None):
+                        train_ans=None, ans_vocab=None, train_ans_feats=None,
+                        bert=False):
     dicts = {}
     dicts['src'] = initVocabulary('source', [train_src], src_vocab, 0)
     dicts['tgt'] = initVocabulary('target', [train_tgt], tgt_vocab, 0)
@@ -240,6 +266,10 @@ def prepare_data_online(copy, answer, feature, ans_feature,
         if ans_feature:
             dicts['ans-feat'] = initVocabulary('ans-feat', [train_ans_feats], feat_vocab, 0)
 
+    tokenizer = None
+    if bert:
+        tokenizer = BertTokenizer.from_pretrained('/home/xieyuxi/bert/bert-base-uncased-vocab.txt')
+    
     logger.info('Preparing training ...')
     train = {}
     train['src'], train['bio'], train['feats'], \
@@ -249,7 +279,8 @@ def prepare_data_online(copy, answer, feature, ans_feature,
                                                 dicts['src'], dicts['bio'],
                                                 dicts['feat'], dicts['tgt'],
                                                 train_ans, dicts['ans'],
-                                                train_ans_feats, dicts['ans-feat'])
+                                                train_ans_feats, dicts['ans-feat'], 
+                                                bert, tokenizer)
 
     dataset = {'dicts': dicts,
                'train': train,
