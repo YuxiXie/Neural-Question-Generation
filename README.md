@@ -1,4 +1,4 @@
-# NQG
+# NQG Package (A Preliminary Version -- the updated one will be released in a few months)
 
 * This repository builds a seq2seq-based model which can test different techniques of the state-of-arts in the field of neural question generation.
 
