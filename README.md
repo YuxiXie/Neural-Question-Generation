@@ -74,6 +74,7 @@
 ```
 
 **BERT**
+_PS: Implementing way in this version has been discarded and replaced by a better usage_
 ```
 @article{Devlin2018BERTPO,
   title={BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},
