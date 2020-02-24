@@ -1,5 +1,7 @@
 # NQG Package (A Preliminary Version -- the updated one will be released in a few months)
 
+* also refer to (Package for Neural Question Generation from WING-NUS)[https://github.com/YuxiXie/OpenNQG] for a revised version
+
 * This repository builds a seq2seq-based model which can test different techniques of the state-of-arts in the field of neural question generation.
 
 * The based code comes from the implementation code for the paper "[Neural Question Generation from Text: A Preliminary Study](https://arxiv.org/abs/1704.01792)"
