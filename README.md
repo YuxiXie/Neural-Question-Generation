@@ -133,7 +133,7 @@ cd $NQG_HOME/data
 wget https://res.qyzhou.me/redistribute.zip
 unzip redistribute.zip
 ```
-Put the data in the folder `$NQG_HOME/code/data/giga` and organize them as:
+Put the data in the folder `$NQG_HOME/code/data` and organize them as:
 ```
 nqg
 ├── code
